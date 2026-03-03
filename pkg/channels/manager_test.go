@@ -286,13 +286,12 @@ func TestWorkerRateLimiter(t *testing.T) {
 		limiter: rate.NewLimiter(2, 1),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go m.runWorker(ctx, "test", w)
 
 	// Enqueue 4 messages
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		w.queue <- bus.OutboundMessage{Channel: "test", ChatID: "1", Content: fmt.Sprintf("msg%d", i)}
 	}
 
@@ -379,8 +378,7 @@ func TestRunWorker_MessageSplitting(t *testing.T) {
 		limiter: rate.NewLimiter(rate.Inf, 1),
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	go m.runWorker(ctx, "test", w)
 
@@ -603,7 +601,7 @@ func TestRecordPlaceholder_ConcurrentSafe(t *testing.T) {
 	m := newTestManager()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -618,7 +616,7 @@ func TestRecordTypingStop_ConcurrentSafe(t *testing.T) {
 	m := newTestManager()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -861,7 +859,7 @@ func TestLazyWorkerCreation(t *testing.T) {
 func TestBuildMediaScope_FastIDUniqueness(t *testing.T) {
 	seen := make(map[string]bool)
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		scope := BuildMediaScope("test", "chat1", "")
 		if seen[scope] {
 			t.Fatalf("duplicate scope generated: %s", scope)
