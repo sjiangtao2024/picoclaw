@@ -79,17 +79,25 @@ func NewAgentInstance(
 	}
 
 	maxIter := defaults.MaxToolIterations
+	if agentCfg != nil && agentCfg.MaxToolIterations > 0 {
+		maxIter = agentCfg.MaxToolIterations
+	}
 	if maxIter == 0 {
 		maxIter = 20
 	}
 
 	maxTokens := defaults.MaxTokens
+	if agentCfg != nil && agentCfg.MaxTokens > 0 {
+		maxTokens = agentCfg.MaxTokens
+	}
 	if maxTokens == 0 {
 		maxTokens = 8192
 	}
 
 	temperature := 0.7
-	if defaults.Temperature != nil {
+	if agentCfg != nil && agentCfg.Temperature != nil {
+		temperature = *agentCfg.Temperature
+	} else if defaults.Temperature != nil {
 		temperature = *defaults.Temperature
 	}
 

@@ -11,6 +11,7 @@ import (
 
 func newInstallCommand(installerFn func() (*skills.SkillInstaller, error)) *cobra.Command {
 	var registry string
+	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "install",
@@ -21,8 +22,8 @@ picoclaw skills install --registry clawhub github
 `,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if registry != "" {
-				if len(args) != 2 {
-					return fmt.Errorf("when --registry is set, exactly 2 arguments are required: <name> <slug>")
+				if len(args) != 1 {
+					return fmt.Errorf("when --registry is set, exactly 1 argument is required: <slug>")
 				}
 				return nil
 			}
@@ -45,14 +46,15 @@ picoclaw skills install --registry clawhub github
 					return err
 				}
 
-				return skillsInstallFromRegistry(cfg, args[0], args[1])
+				return skillsInstallFromRegistry(cfg, registry, args[0], force)
 			}
 
-			return skillsInstallCmd(installer, args[0])
+			return skillsInstallCmd(installer, args[0], force)
 		},
 	}
 
 	cmd.Flags().StringVar(&registry, "registry", "", "Install from registry: --registry <name> <slug>")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing installed skill if present")
 
 	return cmd
 }

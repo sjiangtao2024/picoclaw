@@ -23,6 +23,15 @@ func TestNewInstallSubcommand(t *testing.T) {
 
 	assert.True(t, cmd.HasFlags())
 	assert.NotNil(t, cmd.Flags().Lookup("registry"))
+	assert.NotNil(t, cmd.Flags().Lookup("force"))
 
 	assert.Len(t, cmd.Aliases, 0)
+}
+
+func TestInstallArgs_WithRegistryFlag_RequiresSingleSlugArg(t *testing.T) {
+	cmd := newInstallCommand(nil)
+	require.NoError(t, cmd.Flags().Set("registry", "clawhub"))
+
+	err := cmd.Args(cmd, []string{"weather"})
+	require.NoError(t, err)
 }

@@ -107,6 +107,8 @@ The skills tool configures skill discovery and installation via registries like 
 |--------|------|---------|-------------|
 | `registries.clawhub.enabled` | bool | true | Enable ClawHub registry |
 | `registries.clawhub.base_url` | string | `https://clawhub.ai` | ClawHub base URL |
+| `registries.clawhub.auth_token` | string | `""` | Optional bearer token for elevated quota/limits |
+| `registries.clawhub.proxy` | string | `""` | Optional proxy URL for ClawHub requests (e.g. `http://127.0.0.1:7890`) |
 | `registries.clawhub.search_path` | string | `/api/v1/search` | Search API path |
 | `registries.clawhub.skills_path` | string | `/api/v1/skills` | Skills API path |
 | `registries.clawhub.download_path` | string | `/api/v1/download` | Download API path |
@@ -121,6 +123,8 @@ The skills tool configures skill discovery and installation via registries like 
         "clawhub": {
           "enabled": true,
           "base_url": "https://clawhub.ai",
+          "auth_token": "",
+          "proxy": "",
           "search_path": "/api/v1/search",
           "skills_path": "/api/v1/skills",
           "download_path": "/api/v1/download"

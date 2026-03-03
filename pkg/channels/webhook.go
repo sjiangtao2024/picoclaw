@@ -18,3 +18,9 @@ type HealthChecker interface {
 	HealthPath() string
 	HealthHandler(w http.ResponseWriter, r *http.Request)
 }
+
+// RouteRegistrar is an optional interface for channels that need to register
+// additional HTTP endpoints on the shared server.
+type RouteRegistrar interface {
+	RegisterRoutes(mux *http.ServeMux)
+}

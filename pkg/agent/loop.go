@@ -56,7 +56,41 @@ type processOptions struct {
 	NoHistory       bool   // If true, don't load session history (for heartbeat)
 }
 
-const defaultResponse = "I've completed processing but have no response to give. Increase `max_tool_iterations` in config.json."
+const defaultResponse = "本次任务已完成处理，但还不能稳定回答。请提供更具体上下文，或提高 `max_tool_iterations` 后重试。"
+
+// resolveModelTarget resolves a runtime model reference to concrete provider/model.
+// It supports model aliases from config.model_list and tolerates accidental leading '/'.
+func (al *AgentLoop) resolveModelTarget(
+	fallbackProvider providers.LLMProvider,
+	modelRef string,
+) (providers.LLMProvider, string, error) {
+	normalized := strings.TrimSpace(modelRef)
+	normalized = strings.TrimPrefix(normalized, "/")
+	if normalized == "" {
+		return fallbackProvider, strings.TrimSpace(modelRef), nil
+	}
+
+	if al != nil && al.cfg != nil {
+		if modelCfg, err := al.cfg.GetModelConfig(normalized); err == nil && modelCfg != nil {
+			resolvedProvider, modelID, createErr := providers.CreateProviderFromConfig(modelCfg)
+			if createErr != nil {
+				// Keep runtime resilient: fall back to the current provider when a model alias
+				// resolves to an unsupported protocol in this build.
+				logger.WarnCF("agent", "Model alias provider resolution failed; falling back", map[string]any{
+					"model_ref": normalized,
+					"error":     createErr.Error(),
+				})
+				return fallbackProvider, normalized, nil
+			}
+			if strings.TrimSpace(modelID) == "" {
+				modelID = normalized
+			}
+			return resolvedProvider, modelID, nil
+		}
+	}
+
+	return fallbackProvider, normalized, nil
+}
 
 func NewAgentLoop(cfg *config.Config, msgBus *bus.MessageBus, provider providers.LLMProvider) *AgentLoop {
 	registry := NewAgentRegistry(cfg, provider)
@@ -659,7 +693,11 @@ func (al *AgentLoop) runLLMIteration(
 			if len(agent.Candidates) > 1 && al.fallback != nil {
 				fbResult, fbErr := al.fallback.Execute(ctx, agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, map[string]any{
+						targetProvider, targetModel, resolveErr := al.resolveModelTarget(agent.Provider, model)
+						if resolveErr != nil {
+							return nil, resolveErr
+						}
+						return targetProvider.Chat(ctx, messages, providerToolDefs, targetModel, map[string]any{
 							"max_tokens":       agent.MaxTokens,
 							"temperature":      agent.Temperature,
 							"prompt_cache_key": agent.ID,
@@ -676,7 +714,11 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, map[string]any{
+			targetProvider, targetModel, resolveErr := al.resolveModelTarget(agent.Provider, agent.Model)
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
+			return targetProvider.Chat(ctx, messages, providerToolDefs, targetModel, map[string]any{
 				"max_tokens":       agent.MaxTokens,
 				"temperature":      agent.Temperature,
 				"prompt_cache_key": agent.ID,
@@ -921,6 +963,11 @@ func (al *AgentLoop) runLLMIteration(
 			// Save tool result message to session
 			agent.Sessions.AddFullMessage(opts.SessionKey, toolResultMsg)
 		}
+	}
+
+	// Hit max iterations without a direct answer.
+	if finalContent == "" && iteration >= agent.MaxIterations {
+		return "本次任务在多轮工具调用后仍未得到稳定结论。请提供更具体的数据源，或让我减少工具步骤后重试。", iteration, nil
 	}
 
 	return finalContent, iteration, nil

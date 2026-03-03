@@ -10,7 +10,9 @@ package whatsapp
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +29,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
 	_ "modernc.org/sqlite"
+	"rsc.io/qr"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -59,6 +62,18 @@ type WhatsAppNativeChannel struct {
 	reconnecting bool
 	stopping     atomic.Bool    // set once Stop begins; prevents new wg.Add calls
 	wg           sync.WaitGroup // tracks background goroutines (QR handler, reconnect)
+	pairing      pairingState
+	pairingMu    sync.RWMutex
+}
+
+type pairingState struct {
+	Connected    bool   `json:"connected"`
+	NeedsPairing bool   `json:"needs_pairing"`
+	Event        string `json:"event"`
+	Code         string `json:"code"`
+	UpdatedAt    string `json:"updated_at"`
+	ExpiresAt    string `json:"expires_at,omitempty"`
+	expiresAtUnix int64
 }
 
 // NewWhatsAppNativeChannel creates a WhatsApp channel that uses whatsmeow for connection.
@@ -76,6 +91,10 @@ func NewWhatsAppNativeChannel(
 		BaseChannel: base,
 		config:      cfg,
 		storePath:   storePath,
+		pairing: pairingState{
+			Event:     "init",
+			UpdatedAt: time.Now().Format(time.RFC3339),
+		},
 	}
 	return c, nil
 }
@@ -155,6 +174,7 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 	}()
 
 	if client.Store.ID == nil {
+		c.setPairingState(false, true, "awaiting_qr", "")
 		qrChan, err := client.GetQRChannel(c.runCtx)
 		if err != nil {
 			return fmt.Errorf("get QR channel: %w", err)
@@ -162,43 +182,11 @@ func (c *WhatsAppNativeChannel) Start(ctx context.Context) error {
 		if err := client.Connect(); err != nil {
 			return fmt.Errorf("connect: %w", err)
 		}
-		// Handle QR events in a background goroutine so Start() returns
-		// promptly.  The goroutine is tracked via c.wg and respects
-		// c.runCtx for cancellation.
-		// Guard wg.Add with reconnectMu + stopping check (same protocol
-		// as eventHandler) so a concurrent Stop() cannot enter wg.Wait()
-		// while we call wg.Add(1).
-		c.reconnectMu.Lock()
-		if c.stopping.Load() {
-			c.reconnectMu.Unlock()
-			return fmt.Errorf("channel stopped during QR setup")
+		if err := c.startQREventLoop(qrChan); err != nil {
+			return err
 		}
-		c.wg.Add(1)
-		c.reconnectMu.Unlock()
-		go func() {
-			defer c.wg.Done()
-			for {
-				select {
-				case <-c.runCtx.Done():
-					return
-				case evt, ok := <-qrChan:
-					if !ok {
-						return
-					}
-					if evt.Event == "code" {
-						logger.InfoCF("whatsapp", "Scan this QR code with WhatsApp (Linked Devices):", nil)
-						qrterminal.GenerateWithConfig(evt.Code, qrterminal.Config{
-							Level:      qrterminal.L,
-							Writer:     os.Stdout,
-							HalfBlocks: true,
-						})
-					} else {
-						logger.InfoCF("whatsapp", "WhatsApp login event", map[string]any{"event": evt.Event})
-					}
-				}
-			}
-		}()
 	} else {
+		c.setPairingState(true, false, "connected", "")
 		if err := client.Connect(); err != nil {
 			return fmt.Errorf("connect: %w", err)
 		}
@@ -263,6 +251,7 @@ func (c *WhatsAppNativeChannel) Stop(ctx context.Context) error {
 		_ = container.Close()
 	}
 	c.SetRunning(false)
+	c.setPairingState(false, false, "stopped", "")
 	return nil
 }
 
@@ -270,7 +259,10 @@ func (c *WhatsAppNativeChannel) eventHandler(evt any) {
 	switch evt.(type) {
 	case *events.Message:
 		c.handleIncoming(evt.(*events.Message))
+	case *events.Connected:
+		c.setPairingState(true, false, "connected", "")
 	case *events.Disconnected:
+		c.setPairingState(false, false, "disconnected", "")
 		logger.InfoCF("whatsapp", "WhatsApp disconnected, will attempt reconnection", nil)
 		c.reconnectMu.Lock()
 		if c.reconnecting {
@@ -293,6 +285,315 @@ func (c *WhatsAppNativeChannel) eventHandler(evt any) {
 		}()
 	}
 }
+
+func (c *WhatsAppNativeChannel) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/api/whatsapp/pairing", c.handlePairingStatus)
+	mux.HandleFunc("/api/whatsapp/pairing/qr.png", c.handlePairingQRPNG)
+	mux.HandleFunc("/api/whatsapp/pairing/refresh", c.handlePairingRefresh)
+	mux.HandleFunc("/whatsapp/pairing", c.handlePairingPage)
+}
+
+func (c *WhatsAppNativeChannel) handlePairingStatus(w http.ResponseWriter, _ *http.Request) {
+	resp := map[string]any{
+		"channel":    "whatsapp_native",
+		"configured": c.config.Enabled && c.config.UseNative,
+	}
+	for k, v := range c.getPairingStateMap() {
+		resp[k] = v
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (c *WhatsAppNativeChannel) handlePairingPage(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(pairingPageHTML))
+}
+
+func (c *WhatsAppNativeChannel) handlePairingQRPNG(w http.ResponseWriter, _ *http.Request) {
+	state := c.getPairingState()
+	code := strings.TrimSpace(state.Code)
+	if code == "" {
+		http.Error(w, "pairing code is empty", http.StatusNotFound)
+		return
+	}
+	qrCode, err := qr.Encode(code, qr.M)
+	if err != nil {
+		http.Error(w, "failed to encode qr", http.StatusInternalServerError)
+		return
+	}
+	qrCode.Scale = 8
+	png := qrCode.PNG()
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(png)
+}
+
+func (c *WhatsAppNativeChannel) handlePairingRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	c.mu.Lock()
+	client := c.client
+	runCtx := c.runCtx
+	c.mu.Unlock()
+
+	if client == nil || runCtx == nil {
+		http.Error(w, "whatsapp channel not initialized", http.StatusServiceUnavailable)
+		return
+	}
+	if client.Store.ID != nil {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok":      true,
+			"message": "already connected",
+		})
+		return
+	}
+
+	if client.IsConnected() {
+		client.Disconnect()
+	}
+
+	qrChan, err := client.GetQRChannel(runCtx)
+	if err != nil {
+		http.Error(w, "failed to get qr channel: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := client.Connect(); err != nil {
+		http.Error(w, "failed to connect: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if err := c.startQREventLoop(qrChan); err != nil {
+		http.Error(w, "failed to start qr loop: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	c.setPairingState(false, true, "refresh_requested", "")
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"ok":      true,
+		"message": "refresh triggered",
+	})
+}
+
+func (c *WhatsAppNativeChannel) setPairingState(connected, needsPairing bool, event, code string) {
+	c.pairingMu.Lock()
+	defer c.pairingMu.Unlock()
+	c.pairing.Connected = connected
+	c.pairing.NeedsPairing = needsPairing
+	c.pairing.Event = event
+	c.pairing.Code = code
+	c.pairing.UpdatedAt = time.Now().Format(time.RFC3339)
+	if code == "" {
+		c.pairing.ExpiresAt = ""
+		c.pairing.expiresAtUnix = 0
+	}
+}
+
+func (c *WhatsAppNativeChannel) setPairingCode(code string, timeout time.Duration) {
+	c.pairingMu.Lock()
+	defer c.pairingMu.Unlock()
+	c.pairing.Connected = false
+	c.pairing.NeedsPairing = true
+	c.pairing.Event = "code"
+	c.pairing.Code = code
+	c.pairing.UpdatedAt = time.Now().Format(time.RFC3339)
+	if timeout > 0 {
+		exp := time.Now().Add(timeout)
+		c.pairing.ExpiresAt = exp.Format(time.RFC3339)
+		c.pairing.expiresAtUnix = exp.Unix()
+	} else {
+		c.pairing.ExpiresAt = ""
+		c.pairing.expiresAtUnix = 0
+	}
+}
+
+func (c *WhatsAppNativeChannel) startQREventLoop(qrChan <-chan whatsmeow.QRChannelItem) error {
+	// Guard wg.Add with reconnectMu + stopping check (same protocol as
+	// eventHandler) so a concurrent Stop() cannot enter wg.Wait while we Add.
+	c.reconnectMu.Lock()
+	if c.stopping.Load() {
+		c.reconnectMu.Unlock()
+		return fmt.Errorf("channel stopped during QR setup")
+	}
+	c.wg.Add(1)
+	c.reconnectMu.Unlock()
+
+	go func() {
+		defer c.wg.Done()
+		for {
+			select {
+			case <-c.runCtx.Done():
+				return
+			case evt, ok := <-qrChan:
+				if !ok {
+					return
+				}
+				if evt.Event == "code" {
+					c.setPairingCode(evt.Code, evt.Timeout)
+					logger.InfoCF("whatsapp", "Scan this QR code with WhatsApp (Linked Devices):", nil)
+					qrterminal.GenerateWithConfig(evt.Code, qrterminal.Config{
+						Level:      qrterminal.L,
+						Writer:     os.Stdout,
+						HalfBlocks: true,
+					})
+				} else {
+					c.handlePairingEvent(evt.Event)
+					logger.InfoCF("whatsapp", "WhatsApp login event", map[string]any{"event": evt.Event})
+				}
+			}
+		}
+	}()
+	return nil
+}
+
+func (c *WhatsAppNativeChannel) handlePairingEvent(event string) {
+	state := c.getPairingState()
+	connected := state.Connected
+	needsPairing := state.NeedsPairing
+	code := state.Code
+	switch strings.ToLower(strings.TrimSpace(event)) {
+	case "success", "connected":
+		connected = true
+		needsPairing = false
+		code = ""
+	case "timeout", "expired":
+		connected = false
+		needsPairing = true
+		code = ""
+	}
+	c.setPairingState(connected, needsPairing, event, code)
+}
+
+func (c *WhatsAppNativeChannel) getPairingState() pairingState {
+	c.pairingMu.RLock()
+	defer c.pairingMu.RUnlock()
+	return c.pairing
+}
+
+func (c *WhatsAppNativeChannel) getPairingStateMap() map[string]any {
+	s := c.getPairingState()
+	var left int64
+	if s.expiresAtUnix > 0 {
+		left = s.expiresAtUnix - time.Now().Unix()
+		if left < 0 {
+			left = 0
+		}
+	}
+	return map[string]any{
+		"connected":          s.Connected,
+		"needs_pairing":      s.NeedsPairing,
+		"event":              s.Event,
+		"code":               s.Code,
+		"updated_at":         s.UpdatedAt,
+		"expires_at":         s.ExpiresAt,
+		"expires_in_seconds": left,
+	}
+}
+
+const pairingPageHTML = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WhatsApp Pairing</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; margin: 0; background: #0b1220; color: #e5e7eb; }
+    .wrap { max-width: 680px; margin: 24px auto; padding: 20px; background: #111827; border: 1px solid #1f2937; border-radius: 12px; }
+    .title { font-size: 20px; font-weight: 700; margin-bottom: 12px; }
+    .sub { color: #9ca3af; margin-bottom: 16px; }
+    .row { margin: 8px 0; }
+    .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #1f2937; color: #d1d5db; }
+    .code { margin-top: 12px; padding: 12px; border-radius: 8px; background: #030712; border: 1px dashed #374151; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+    #qrcode { margin-top: 16px; display: block; width: 300px; height: 300px; background: #fff; padding: 8px; border-radius: 8px; object-fit: contain; }
+    .hint { margin-top: 12px; color: #9ca3af; font-size: 14px; }
+    button { margin-top: 10px; border: 1px solid #374151; background: #111827; color: #e5e7eb; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="title">WhatsApp Pairing</div>
+    <div class="sub">Auto-refreshes every 2s. Keep this page open while pairing.</div>
+    <div class="row">Connection: <span id="connected" class="pill">unknown</span></div>
+    <div class="row">Event: <span id="event" class="pill">init</span></div>
+    <div class="row">Updated: <span id="updated" class="pill">-</span></div>
+    <div class="row">Expires: <span id="expires" class="pill">-</span></div>
+    <div class="row">Countdown: <span id="countdown" class="pill">-</span></div>
+    <img id="qrcode" alt="QR code will appear here" />
+    <div id="code" class="code">Waiting for pairing code...</div>
+    <button id="copy-btn" type="button">Copy Code</button>
+    <button id="refresh-btn" type="button">Manual Request QR</button>
+    <button id="status-btn" type="button">Refresh Status</button>
+    <div class="hint">If QR is not shown, install network access for CDN or copy code manually.</div>
+  </div>
+  <script>
+    let lastCode = "";
+    const qrcodeEl = document.getElementById("qrcode");
+    const codeEl = document.getElementById("code");
+    const connectedEl = document.getElementById("connected");
+    const eventEl = document.getElementById("event");
+    const updatedEl = document.getElementById("updated");
+    const expiresEl = document.getElementById("expires");
+    const countdownEl = document.getElementById("countdown");
+    const copyBtn = document.getElementById("copy-btn");
+    const refreshBtn = document.getElementById("refresh-btn");
+    const statusBtn = document.getElementById("status-btn");
+
+    copyBtn.addEventListener("click", async () => {
+      if (!lastCode) return;
+      try { await navigator.clipboard.writeText(lastCode); } catch (_) {}
+    });
+
+    refreshBtn.addEventListener("click", async () => {
+      refreshBtn.disabled = true;
+      try {
+        await fetch("/api/whatsapp/pairing/refresh", { method: "POST" });
+      } catch (_) {}
+      await refresh();
+      refreshBtn.disabled = false;
+    });
+
+    statusBtn.addEventListener("click", async () => {
+      statusBtn.disabled = true;
+      await refresh();
+      statusBtn.disabled = false;
+    });
+
+    function renderQR(text) {
+      if (!text) {
+        qrcodeEl.removeAttribute("src");
+        return;
+      }
+      qrcodeEl.src = "/api/whatsapp/pairing/qr.png?t=" + Date.now();
+    }
+
+    async function refresh() {
+      try {
+        const resp = await fetch("/api/whatsapp/pairing", { cache: "no-store" });
+        const data = await resp.json();
+        connectedEl.textContent = data.connected ? "connected" : "not connected";
+        eventEl.textContent = data.event || "unknown";
+        updatedEl.textContent = data.updated_at || "-";
+        expiresEl.textContent = data.expires_at || "-";
+        const left = Number(data.expires_in_seconds || 0);
+        countdownEl.textContent = left > 0 ? (left + "s") : "-";
+        const code = (data.code || "").trim();
+        codeEl.textContent = code || "Waiting for pairing code...";
+        if (code !== lastCode) {
+          lastCode = code;
+          renderQR(code);
+        }
+      } catch (_) {
+        connectedEl.textContent = "error";
+      }
+    }
+    refresh();
+  </script>
+</body>
+</html>`
 
 func (c *WhatsAppNativeChannel) reconnectWithBackoff() {
 	defer func() {

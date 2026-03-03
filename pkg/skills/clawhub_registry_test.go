@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -147,6 +148,20 @@ func TestClawHubRegistryAuthToken(t *testing.T) {
 
 	reg := newTestRegistry(srv.URL, "test-token-123")
 	_, _ = reg.Search(context.Background(), "test", 5)
+}
+
+func TestNewClawHubRegistryProxyFromConfig(t *testing.T) {
+	reg := NewClawHubRegistry(ClawHubConfig{
+		Enabled: true,
+		BaseURL: "https://clawhub.ai",
+		Proxy:   "http://127.0.0.1:7890",
+	})
+
+	req := &http.Request{URL: &url.URL{Scheme: "https", Host: "clawhub.ai"}}
+	proxyURL, err := reg.client.Transport.(*http.Transport).Proxy(req)
+	require.NoError(t, err)
+	require.NotNil(t, proxyURL)
+	assert.Equal(t, "http://127.0.0.1:7890", proxyURL.String())
 }
 
 func TestExtractZipPathTraversal(t *testing.T) {

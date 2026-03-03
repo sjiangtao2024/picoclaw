@@ -5,13 +5,30 @@
 
 package providers
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"sync/atomic"
+	"time"
+)
+
+var toolCallIDSeq uint64
 
 // NormalizeToolCall normalizes a ToolCall to ensure all fields are properly populated.
 // It handles cases where Name/Arguments might be in different locations (top-level vs Function)
 // and ensures both are populated consistently.
 func NormalizeToolCall(tc ToolCall) ToolCall {
 	normalized := tc
+
+	// Ensure ID exists so follow-up tool result messages always have a valid tool_call_id.
+	if normalized.ID == "" {
+		normalized.ID = fmt.Sprintf("call_%d_%d", time.Now().UnixNano(), atomic.AddUint64(&toolCallIDSeq, 1))
+	}
+
+	// OpenAI-compatible payloads should mark tool calls as function calls.
+	if normalized.Type == "" {
+		normalized.Type = "function"
+	}
 
 	// Ensure Name is populated from Function if not set
 	if normalized.Name == "" && normalized.Function != nil {

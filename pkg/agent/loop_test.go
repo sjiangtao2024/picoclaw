@@ -274,6 +274,74 @@ func TestToolRegistry_GetDefinitions(t *testing.T) {
 	}
 }
 
+func TestResolveModelTarget_UsesModelListAlias(t *testing.T) {
+	cfg := &config.Config{
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "gpt-5.2-codex",
+				Model:     "openai/gpt-4o-mini",
+				APIBase:   "http://aiproxy.local:8317/v1",
+				APIKey:    "test-key",
+			},
+		},
+	}
+	al := &AgentLoop{cfg: cfg}
+	fallback := &mockProvider{}
+
+	gotProvider, gotModel, err := al.resolveModelTarget(fallback, "gpt-5.2-codex")
+	if err != nil {
+		t.Fatalf("resolveModelTarget returned error: %v", err)
+	}
+	if gotModel != "gpt-4o-mini" {
+		t.Fatalf("expected resolved model gpt-4o-mini, got %q", gotModel)
+	}
+	if gotProvider == fallback {
+		t.Fatalf("expected provider from model_list, got fallback provider")
+	}
+}
+
+func TestResolveModelTarget_LeadingSlashStillResolvesAlias(t *testing.T) {
+	cfg := &config.Config{
+		ModelList: []config.ModelConfig{
+			{
+				ModelName: "gpt-5.2-codex",
+				Model:     "openai/gpt-4o-mini",
+				APIBase:   "http://aiproxy.local:8317/v1",
+				APIKey:    "test-key",
+			},
+		},
+	}
+	al := &AgentLoop{cfg: cfg}
+	fallback := &mockProvider{}
+
+	gotProvider, gotModel, err := al.resolveModelTarget(fallback, "/gpt-5.2-codex")
+	if err != nil {
+		t.Fatalf("resolveModelTarget returned error: %v", err)
+	}
+	if gotModel != "gpt-4o-mini" {
+		t.Fatalf("expected resolved model gpt-4o-mini, got %q", gotModel)
+	}
+	if gotProvider == fallback {
+		t.Fatalf("expected provider from model_list, got fallback provider")
+	}
+}
+
+func TestResolveModelTarget_UnknownModelUsesFallback(t *testing.T) {
+	al := &AgentLoop{cfg: &config.Config{}}
+	fallback := &mockProvider{}
+
+	gotProvider, gotModel, err := al.resolveModelTarget(fallback, "/unknown-model")
+	if err != nil {
+		t.Fatalf("resolveModelTarget returned error: %v", err)
+	}
+	if gotModel != "unknown-model" {
+		t.Fatalf("expected trimmed model unknown-model, got %q", gotModel)
+	}
+	if gotProvider != fallback {
+		t.Fatalf("expected fallback provider for unknown model")
+	}
+}
+
 // TestAgentLoop_GetStartupInfo verifies startup info contains tools
 func TestAgentLoop_GetStartupInfo(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")

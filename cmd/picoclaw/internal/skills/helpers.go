@@ -33,11 +33,16 @@ func skillsListCmd(loader *skills.SkillsLoader) {
 	}
 }
 
-func skillsInstallCmd(installer *skills.SkillInstaller, repo string) error {
+func skillsInstallCmd(installer *skills.SkillInstaller, repo string, force bool) error {
 	fmt.Printf("Installing skill from %s...\n", repo)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	if force {
+		skillName := filepath.Base(repo)
+		_ = installer.Uninstall(skillName)
+	}
 
 	if err := installer.InstallFromGitHub(ctx, repo); err != nil {
 		return fmt.Errorf("failed to install skill: %w", err)
@@ -49,7 +54,7 @@ func skillsInstallCmd(installer *skills.SkillInstaller, repo string) error {
 }
 
 // skillsInstallFromRegistry installs a skill from a named registry (e.g. clawhub).
-func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) error {
+func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string, force bool) error {
 	err := utils.ValidateSkillIdentifier(registryName)
 	if err != nil {
 		return fmt.Errorf("✗  invalid registry name: %w", err)
@@ -76,7 +81,12 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) er
 	targetDir := filepath.Join(workspace, "skills", slug)
 
 	if _, err = os.Stat(targetDir); err == nil {
-		return fmt.Errorf("\u2717 skill '%s' already installed at %s", slug, targetDir)
+		if !force {
+			return fmt.Errorf("\u2717 skill '%s' already installed at %s", slug, targetDir)
+		}
+		if err = os.RemoveAll(targetDir); err != nil {
+			return fmt.Errorf("\u2717 failed to remove existing skill '%s': %v", slug, err)
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)

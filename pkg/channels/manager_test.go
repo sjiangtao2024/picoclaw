@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -26,6 +28,16 @@ func (m *mockChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 
 func (m *mockChannel) Start(ctx context.Context) error { return nil }
 func (m *mockChannel) Stop(ctx context.Context) error  { return nil }
+
+type routeChannel struct {
+	mockChannel
+}
+
+func (r *routeChannel) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/test/route", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	})
+}
 
 // newTestManager creates a minimal Manager suitable for unit tests.
 func newTestManager() *Manager {
@@ -324,6 +336,21 @@ func TestNewChannelWorker_ConfiguredRate(t *testing.T) {
 		if w.limiter.Limit() != rate.Limit(expectedRate) {
 			t.Fatalf("channel %s: expected rate %v, got %v", name, expectedRate, w.limiter.Limit())
 		}
+	}
+}
+
+func TestSetupHTTPServer_RegistersChannelRoutes(t *testing.T) {
+	m := newTestManager()
+	m.channels["route"] = &routeChannel{}
+
+	m.SetupHTTPServer("127.0.0.1:0", nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/test/route", nil)
+	rec := httptest.NewRecorder()
+	m.mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTeapot {
+		t.Fatalf("expected %d, got %d", http.StatusTeapot, rec.Code)
 	}
 }
 

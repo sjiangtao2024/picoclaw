@@ -283,6 +283,12 @@ func (m *Manager) SetupHTTPServer(addr string, healthServer *health.Server) {
 
 	// Discover and register webhook handlers and health checkers
 	for name, ch := range m.channels {
+		if rr, ok := ch.(RouteRegistrar); ok {
+			rr.RegisterRoutes(m.mux)
+			logger.InfoCF("channels", "Channel routes registered", map[string]any{
+				"channel": name,
+			})
+		}
 		if wh, ok := ch.(WebhookHandler); ok {
 			m.mux.Handle(wh.WebhookPath(), wh)
 			logger.InfoCF("channels", "Webhook handler registered", map[string]any{
@@ -318,6 +324,21 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	logger.InfoC("channels", "Starting all channels")
 
+	// Start shared HTTP server first so status/pages are reachable even if
+	// a channel startup blocks (e.g. WhatsApp native connect/login).
+	if m.httpServer != nil {
+		go func() {
+			logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
+				"addr": m.httpServer.Addr,
+			})
+			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				logger.ErrorCF("channels", "Shared HTTP server error", map[string]any{
+					"error": err.Error(),
+				})
+			}
+		}()
+	}
+
 	dispatchCtx, cancel := context.WithCancel(ctx)
 	m.dispatchTask = &asyncTask{cancel: cancel}
 
@@ -345,20 +366,6 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 	// Start the TTL janitor that cleans up stale typing/placeholder entries
 	go m.runTTLJanitor(dispatchCtx)
-
-	// Start shared HTTP server if configured
-	if m.httpServer != nil {
-		go func() {
-			logger.InfoCF("channels", "Shared HTTP server listening", map[string]any{
-				"addr": m.httpServer.Addr,
-			})
-			if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logger.ErrorCF("channels", "Shared HTTP server error", map[string]any{
-					"error": err.Error(),
-				})
-			}
-		}()
-	}
 
 	logger.InfoC("channels", "All channels started")
 	return nil

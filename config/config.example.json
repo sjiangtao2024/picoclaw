@@ -33,6 +33,24 @@
       "api_key": "sk-your-deepseek-key"
     },
     {
+      "model_name": "kimi-k2.5",
+      "model": "moonshot/kimi-k2.5",
+      "api_key": "sk-your-moonshot-key",
+      "api_base": "https://api.moonshot.cn/v1"
+    },
+    {
+      "model_name": "aliyun-coding-qwen3-coder-plus",
+      "model": "openai/qwen3-coder-plus",
+      "api_key": "sk-your-aliyun-coding-key",
+      "api_base": "https://coding.dashscope.aliyuncs.com/v1"
+    },
+    {
+      "model_name": "aliyun-coding-kimi-k2.5",
+      "model": "openai/kimi-k2.5",
+      "api_key": "sk-your-aliyun-coding-key",
+      "api_base": "https://coding.dashscope.aliyuncs.com/v1"
+    },
+    {
       "model_name": "loadbalanced-gpt4",
       "model": "openai/gpt-5.2",
       "api_key": "sk-key1",
@@ -81,6 +99,7 @@
       "bridge_url": "ws://localhost:3001",
       "use_native": false,
       "session_store_path": "",
+      "proxy": "",
       "allow_from": [],
       "reasoning_channel_id": ""
     },
@@ -246,6 +265,8 @@
         "clawhub": {
           "enabled": true,
           "base_url": "https://clawhub.ai",
+          "auth_token": "YOUR_CLAWHUB_TOKEN_IF_ANY",
+          "proxy": "",
           "search_path": "/api/v1/search",
           "skills_path": "/api/v1/skills",
           "download_path": "/api/v1/download"

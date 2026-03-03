@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/sipeed/picoclaw/pkg/utils"
@@ -65,6 +66,18 @@ func NewClawHubRegistry(cfg ClawHubConfig) *ClawHubRegistry {
 		maxResp = cfg.MaxResponseSize
 	}
 
+	transport := &http.Transport{
+		MaxIdleConns:        5,
+		IdleConnTimeout:     30 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		Proxy:               http.ProxyFromEnvironment,
+	}
+	if proxy := strings.TrimSpace(cfg.Proxy); proxy != "" {
+		if proxyURL, err := url.Parse(proxy); err == nil {
+			transport.Proxy = http.ProxyURL(proxyURL)
+		}
+	}
+
 	return &ClawHubRegistry{
 		baseURL:         baseURL,
 		authToken:       cfg.AuthToken,
@@ -75,11 +88,7 @@ func NewClawHubRegistry(cfg ClawHubConfig) *ClawHubRegistry {
 		maxResponseSize: maxResp,
 		client: &http.Client{
 			Timeout: timeout,
-			Transport: &http.Transport{
-				MaxIdleConns:        5,
-				IdleConnTimeout:     30 * time.Second,
-				TLSHandshakeTimeout: 10 * time.Second,
-			},
+			Transport: transport,
 		},
 	}
 }
