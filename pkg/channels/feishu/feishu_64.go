@@ -6,10 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
+	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkdispatcher "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
@@ -27,6 +30,7 @@ type FeishuChannel struct {
 	config   config.FeishuConfig
 	client   *lark.Client
 	wsClient *larkws.Client
+	botOpenID string
 
 	mu     sync.Mutex
 	cancel context.CancelFunc
@@ -56,6 +60,7 @@ func (c *FeishuChannel) Start(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 
 	c.mu.Lock()
+	c.botOpenID = c.resolveBotOpenID(ctx)
 	c.cancel = cancel
 	c.wsClient = larkws.NewClient(
 		c.config.AppID,
@@ -102,9 +107,45 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("chat ID is empty")
 	}
 
-	payload, err := json.Marshal(map[string]string{"text": msg.Content})
+	cardPayload, err := buildInteractiveCardPayload(msg.Content)
+	if err == nil {
+		cardPreview := utils.Truncate(normalizeForFeishuCard(msg.Content), 180)
+		req := larkim.NewCreateMessageReqBuilder().
+			ReceiveIdType(larkim.ReceiveIdTypeChatId).
+			Body(larkim.NewCreateMessageReqBodyBuilder().
+				ReceiveId(msg.ChatID).
+				MsgType(larkim.MsgTypeInteractive).
+				Content(string(cardPayload)).
+				Uuid(fmt.Sprintf("picoclaw-card-%d", time.Now().UnixNano())).
+				Build()).
+			Build()
+
+		resp, sendErr := c.client.Im.V1.Message.Create(ctx, req)
+		if sendErr == nil && resp != nil && resp.Success() {
+			logger.InfoCF("feishu", "Feishu interactive card sent", map[string]any{
+				"chat_id":      msg.ChatID,
+				"card_preview": cardPreview,
+			})
+			return nil
+		}
+		code := -1
+		msgText := ""
+		if resp != nil {
+			code = resp.Code
+			msgText = resp.Msg
+		}
+		logger.InfoCF("feishu", "Interactive card send failed; fallback to text", map[string]any{
+			"chat_id":      msg.ChatID,
+			"error":        fmt.Sprintf("%v", sendErr),
+			"code":         code,
+			"msg":          msgText,
+			"card_preview": cardPreview,
+		})
+	}
+
+	textPayload, err := json.Marshal(map[string]string{"text": msg.Content})
 	if err != nil {
-		return fmt.Errorf("failed to marshal feishu content: %w", err)
+		return fmt.Errorf("failed to marshal feishu text content: %w", err)
 	}
 
 	req := larkim.NewCreateMessageReqBuilder().
@@ -112,8 +153,8 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		Body(larkim.NewCreateMessageReqBodyBuilder().
 			ReceiveId(msg.ChatID).
 			MsgType(larkim.MsgTypeText).
-			Content(string(payload)).
-			Uuid(fmt.Sprintf("picoclaw-%d", time.Now().UnixNano())).
+			Content(string(textPayload)).
+			Uuid(fmt.Sprintf("picoclaw-text-%d", time.Now().UnixNano())).
 			Build()).
 		Build()
 
@@ -121,7 +162,6 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	if err != nil {
 		return fmt.Errorf("feishu send: %w", channels.ErrTemporary)
 	}
-
 	if !resp.Success() {
 		return fmt.Errorf("feishu api error (code=%d msg=%s): %w", resp.Code, resp.Msg, channels.ErrTemporary)
 	}
@@ -131,6 +171,214 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 	})
 
 	return nil
+}
+
+func shouldUseInteractiveCard(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return false
+	}
+	// Prefer card rendering for structured output so Feishu can display rich layout.
+	return strings.Contains(trimmed, "\n") ||
+		strings.Contains(trimmed, "|") ||
+		strings.Contains(trimmed, "###") ||
+		strings.Contains(trimmed, "**")
+}
+
+func buildInteractiveCardPayload(content string) ([]byte, error) {
+	cardContent := normalizeForFeishuCard(content)
+	elements := []map[string]any{}
+	if blocks := buildRepoRecommendElements(content); len(blocks) > 0 {
+		elements = blocks
+	} else {
+		elements = []map[string]any{
+			{
+				"tag":     "markdown",
+				"content": cardContent,
+			},
+		}
+	}
+
+	card := map[string]any{
+		"config": map[string]any{
+			"wide_screen_mode": true,
+		},
+		"header": map[string]any{
+			"template": "turquoise",
+			"title": map[string]any{
+				"tag":     "plain_text",
+				"content": "PicoClaw 推荐结果",
+			},
+		},
+		"elements": elements,
+	}
+	return json.Marshal(card)
+}
+
+func normalizeForFeishuCard(content string) string {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	var out []string
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			out = append(out, "")
+			continue
+		}
+
+		// Convert markdown headings to plain titles.
+		line = strings.TrimPrefix(line, "### ")
+		line = strings.TrimPrefix(line, "## ")
+		line = strings.TrimPrefix(line, "# ")
+
+		// Convert markdown list bullets to a plain bullet.
+		line = strings.TrimPrefix(line, "* ")
+		line = strings.TrimPrefix(line, "- ")
+		line = strings.TrimPrefix(line, "*   ")
+
+		// Remove markdown emphasis markers.
+		line = strings.ReplaceAll(line, "**", "")
+
+		// Convert markdown links [text](url) -> text（url）
+		line = markdownLinkToPlain(line)
+
+		// Detect and transform markdown table blocks.
+		if strings.Contains(line, "|") && i+1 < len(lines) && isTableDivider(strings.TrimSpace(lines[i+1])) {
+			headers := parseTableRow(line)
+			i += 2 // skip header + divider
+			for ; i < len(lines); i++ {
+				rowLine := strings.TrimSpace(lines[i])
+				if rowLine == "" || !strings.Contains(rowLine, "|") {
+					i--
+					break
+				}
+				cells := parseTableRow(rowLine)
+				if len(cells) == 0 {
+					continue
+				}
+				var parts []string
+				for c := 0; c < len(cells) && c < len(headers); c++ {
+					if cells[c] == "" {
+						continue
+					}
+					parts = append(parts, fmt.Sprintf("%s: %s", headers[c], cells[c]))
+				}
+				if len(parts) > 0 {
+					out = append(out, "- "+strings.Join(parts, " | "))
+				}
+			}
+			continue
+		}
+
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
+}
+
+func isTableDivider(line string) bool {
+	trim := strings.ReplaceAll(strings.ReplaceAll(line, "|", ""), "-", "")
+	trim = strings.ReplaceAll(trim, ":", "")
+	trim = strings.TrimSpace(trim)
+	return trim == "" && strings.Contains(line, "-")
+}
+
+func parseTableRow(line string) []string {
+	parts := strings.Split(line, "|")
+	var out []string
+	for _, p := range parts {
+		cell := strings.TrimSpace(p)
+		if cell != "" {
+			out = append(out, cell)
+		}
+	}
+	return out
+}
+
+var mdLinkPattern = regexp.MustCompile(`\[(.*?)\]\((https?://[^\s)]+)\)`)
+
+func markdownLinkToPlain(line string) string {
+	return mdLinkPattern.ReplaceAllString(line, `$1（$2）`)
+}
+
+type repoRow struct {
+	Name   string
+	Scene  string
+	Why    string
+	Link   string
+}
+
+func buildRepoRecommendElements(content string) []map[string]any {
+	rows := parseRepoRowsFromMarkdownTable(content)
+	if len(rows) == 0 {
+		return nil
+	}
+
+	elements := []map[string]any{
+		{
+			"tag":     "markdown",
+			"content": fmt.Sprintf("已为你筛选 **%d** 个候选仓库，按可落地优先排序：", len(rows)),
+		},
+		{"tag": "hr"},
+	}
+
+	for i, r := range rows {
+		line := fmt.Sprintf(
+			"**%d. %s**\n场景：%s\n理由：%s\n链接：%s",
+			i+1,
+			emptyOr(r.Name, "未命名仓库"),
+			emptyOr(r.Scene, "通用"),
+			emptyOr(r.Why, "与需求匹配"),
+			emptyOr(r.Link, "暂无"),
+		)
+		elements = append(elements, map[string]any{
+			"tag":     "markdown",
+			"content": line,
+		})
+		if i != len(rows)-1 {
+			elements = append(elements, map[string]any{"tag": "hr"})
+		}
+	}
+
+	return elements
+}
+
+func parseRepoRowsFromMarkdownTable(content string) []repoRow {
+	lines := strings.Split(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
+	var out []repoRow
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "" || !strings.Contains(line, "|") || isTableDivider(line) {
+			continue
+		}
+		cells := parseTableRow(line)
+		if len(cells) < 4 {
+			continue
+		}
+		if strings.Contains(cells[0], "项目") && strings.Contains(cells[1], "适用场景") {
+			continue
+		}
+		out = append(out, repoRow{
+			Name:  stripMd(cells[0]),
+			Scene: stripMd(cells[1]),
+			Why:   stripMd(cells[2]),
+			Link:  markdownLinkToPlain(cells[3]),
+		})
+	}
+	return out
+}
+
+func stripMd(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.ReplaceAll(s, "**", "")
+	s = strings.TrimPrefix(s, "- ")
+	s = strings.TrimPrefix(s, "* ")
+	return s
+}
+
+func emptyOr(v, fallback string) string {
+	if strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	return v
 }
 
 func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
@@ -178,7 +426,8 @@ func (c *FeishuChannel) handleMessageReceive(ctx context.Context, event *larkim.
 	} else {
 		peer = bus.Peer{Kind: "group", ID: chatID}
 		// In group chats, apply unified group trigger filtering
-		respond, cleaned := c.ShouldRespondInGroup(false, content)
+		isMentioned := isMentionedForGroup(message, c.botOpenID)
+		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
 		if !respond {
 			return nil
 		}
@@ -238,4 +487,84 @@ func extractFeishuMessageContent(message *larkim.EventMessage) string {
 	}
 
 	return *message.Content
+}
+
+func (c *FeishuChannel) resolveBotOpenID(ctx context.Context) string {
+	if c.client == nil {
+		return ""
+	}
+	// bot/v3/info is the authoritative API for current app bot identity.
+	resp, err := c.client.Get(ctx, "/open-apis/bot/v3/info", nil, larkcore.AccessTokenTypeTenant)
+	if err != nil || resp == nil {
+		logger.WarnCF("feishu", "Failed to resolve bot open_id", map[string]any{
+			"error": fmt.Sprintf("%v", err),
+		})
+		return ""
+	}
+
+	var data struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Bot  struct {
+			OpenID string `json:"open_id"`
+		} `json:"bot"`
+		Data struct {
+			Bot struct {
+				OpenID string `json:"open_id"`
+			} `json:"bot"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &data); err != nil {
+		logger.WarnCF("feishu", "Failed to decode bot info response", map[string]any{
+			"error": err.Error(),
+		})
+		return ""
+	}
+	if data.Code != 0 {
+		logger.WarnCF("feishu", "Failed to resolve bot open_id from API", map[string]any{
+			"code": data.Code,
+			"msg":  data.Msg,
+		})
+		return ""
+	}
+
+	botOpenID := strings.TrimSpace(data.Bot.OpenID)
+	if botOpenID == "" {
+		botOpenID = strings.TrimSpace(data.Data.Bot.OpenID)
+	}
+	if botOpenID == "" {
+		logger.WarnC("feishu", "Bot open_id is empty in bot info response")
+		return ""
+	}
+	logger.InfoCF("feishu", "Resolved bot open_id", map[string]any{
+		"bot_open_id": botOpenID,
+	})
+	return botOpenID
+}
+
+// isMentionedForGroup determines whether the incoming group message explicitly
+// mentions this bot app. We match by mention open_id to avoid false positives
+// when users @ other bots in the same group.
+func isMentionedForGroup(message *larkim.EventMessage, botOpenID string) bool {
+	if message == nil {
+		return false
+	}
+	botOpenID = strings.TrimSpace(botOpenID)
+	if botOpenID == "" {
+		return false
+	}
+	for _, mention := range message.Mentions {
+		if mention == nil || mention.Id == nil || mention.Id.OpenId == nil {
+			continue
+		}
+		if strings.TrimSpace(*mention.Id.OpenId) == botOpenID {
+			return true
+		}
+	}
+	// Post rich-text messages may not always carry top-level mentions.
+	if message.MessageType != nil && *message.MessageType == larkim.MsgTypePost &&
+		message.Content != nil && strings.Contains(*message.Content, botOpenID) {
+		return true
+	}
+	return false
 }
