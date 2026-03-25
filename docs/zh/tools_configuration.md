@@ -396,7 +396,7 @@ Skills 工具配置通过 ClawHub 等注册表进行技能发现和安装。
 
 | 配置项                             | 类型   | 默认值               | 描述                                 |
 |------------------------------------|--------|----------------------|--------------------------------------|
-| `registries.clawhub.enabled`       | bool   | true                 | 启用 ClawHub 注册表                  |
+| `registries.clawhub.enabled`       | bool   | false                | 启用 ClawHub 注册表                  |
 | `registries.clawhub.base_url`      | string | `https://clawhub.ai` | ClawHub 基础 URL                     |
 | `registries.clawhub.auth_token`    | string | `""`                 | 可选的 Bearer 令牌，用于更高速率限制 |
 | `registries.clawhub.search_path`   | string | `""`                 | 搜索 API 路径                        |
@@ -405,6 +405,15 @@ Skills 工具配置通过 ClawHub 等注册表进行技能发现和安装。
 | `registries.clawhub.timeout`       | int    | 0                    | 请求超时时间（秒），0 = 默认         |
 | `registries.clawhub.max_zip_size`  | int    | 0                    | 技能 zip 最大大小（字节），0 = 默认  |
 | `registries.clawhub.max_response_size` | int | 0                   | API 响应最大大小（字节），0 = 默认   |
+| `registries.skillhub.enabled`      | bool   | true                 | 启用腾讯 SkillHub 注册表             |
+| `registries.skillhub.search_url`   | string | `https://lightmake.site/api/v1/search` | SkillHub 搜索 API 地址      |
+| `registries.skillhub.primary_download_url_template` | string | `https://lightmake.site/api/v1/download?slug={slug}` | SkillHub 主下载地址模板 |
+| `registries.skillhub.download_url_template` | string | `https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/{slug}.zip` | SkillHub 镜像下载地址模板 |
+| `registries.skillhub.use_proxy`    | bool   | env/default          | 覆盖 SkillHub 请求是否走代理         |
+| `registries.skillhub.proxy`        | string | `""`                 | SkillHub 显式 HTTP/HTTPS/SOCKS5 代理 |
+| `registries.skillhub.timeout`      | int    | 0                    | 请求超时时间（秒），0 = 默认         |
+| `registries.skillhub.max_zip_size` | int    | 0                    | 技能 zip 最大大小（字节），0 = 默认  |
+| `registries.skillhub.max_response_size` | int | 0                  | API 响应最大大小（字节），0 = 默认   |
 
 ### GitHub 集成
 
@@ -429,9 +438,15 @@ Skills 工具配置通过 ClawHub 等注册表进行技能发现和安装。
     "skills": {
       "registries": {
         "clawhub": {
-          "enabled": true,
+          "enabled": false,
           "base_url": "https://clawhub.ai",
           "auth_token": ""
+        },
+        "skillhub": {
+          "enabled": true,
+          "search_url": "https://lightmake.site/api/v1/search",
+          "primary_download_url_template": "https://lightmake.site/api/v1/download?slug={slug}",
+          "download_url_template": "https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/{slug}.zip"
         }
       },
       "github": {

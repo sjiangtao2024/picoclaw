@@ -61,6 +61,7 @@ type SkillRegistry interface {
 // This is the input to NewRegistryManagerFromConfig.
 type RegistryConfig struct {
 	ClawHub               ClawHubConfig
+	SkillHub              SkillHubConfig
 	MaxConcurrentSearches int
 }
 
@@ -77,6 +78,19 @@ type ClawHubConfig struct {
 	Timeout         int    // seconds, 0 = default (30s)
 	MaxZipSize      int    // bytes, 0 = default (50MB)
 	MaxResponseSize int    // bytes, 0 = default (2MB)
+}
+
+// SkillHubConfig configures the SkillHub registry.
+type SkillHubConfig struct {
+	Enabled                    bool
+	SearchURL                  string
+	PrimaryDownloadURLTemplate string
+	DownloadURLTemplate        string
+	UseProxy                   *bool
+	Proxy                      string
+	Timeout                    int // seconds, 0 = default (30s)
+	MaxZipSize                 int // bytes, 0 = default (50MB)
+	MaxResponseSize            int // bytes, 0 = default (2MB)
 }
 
 // RegistryManager coordinates multiple skill registries.
@@ -104,6 +118,9 @@ func NewRegistryManagerFromConfig(cfg RegistryConfig) *RegistryManager {
 	}
 	if cfg.ClawHub.Enabled {
 		rm.AddRegistry(NewClawHubRegistry(cfg.ClawHub))
+	}
+	if cfg.SkillHub.Enabled {
+		rm.AddRegistry(NewSkillHubRegistry(cfg.SkillHub))
 	}
 	return rm
 }
