@@ -1,6 +1,6 @@
 # H618 Web 交付与升级说明
 
-这份说明面向 H618 一类 ARM64 设备，用于部署 `picoclaw-web` 单二进制版本，并尽量降低后续升级成本。
+这份说明面向 H618 一类 ARM64 设备，用于部署 `picoclaw-web` + `picoclaw` 的交付包，并尽量降低后续升级成本。
 
 ## 目标
 
@@ -14,6 +14,7 @@
 
 ```text
 /opt/picoclaw/current/picoclaw-web-linux-arm64
+/opt/picoclaw/current/picoclaw
 /data/picoclaw/config.json
 /data/picoclaw/launcher-config.json
 /data/picoclaw/logs/
@@ -33,6 +34,7 @@
 
 ```text
 releases/h618/picoclaw-web-linux-arm64
+releases/h618/picoclaw
 ```
 
 也可以自定义输出目录和文件名：
@@ -45,7 +47,7 @@ releases/h618/picoclaw-web-linux-arm64
 
 1. 安装 `web/frontend` 依赖
 2. 构建并嵌入前端资源
-3. 交叉编译 `linux/arm64` 二进制
+3. 交叉编译 `linux/arm64` 的 launcher 和 gateway 二进制
 
 ## systemd 服务文件
 
@@ -77,7 +79,9 @@ mkdir -p /data/picoclaw
 
 ```bash
 cp picoclaw-web-linux-arm64 /opt/picoclaw/current/
+cp picoclaw /opt/picoclaw/current/
 chmod +x /opt/picoclaw/current/picoclaw-web-linux-arm64
+chmod +x /opt/picoclaw/current/picoclaw
 ```
 
 首次启动示例：
@@ -103,7 +107,7 @@ http://设备IP:18800
 在 H618 上可以直接使用仓库内脚本：
 
 ```bash
-./scripts/install-h618-web.sh ./picoclaw-web-linux-arm64
+./scripts/install-h618-web.sh ./picoclaw-web-linux-arm64 ./picoclaw
 ```
 
 它会完成：
@@ -112,6 +116,8 @@ http://设备IP:18800
 2. 初始化 `/data/picoclaw/`
 3. 安装 `systemd` 服务
 4. `enable --now` 启动服务
+
+如果第二个参数留空，脚本会尝试在 launcher 二进制同目录下自动寻找 `picoclaw`。
 
 注意：
 
@@ -123,7 +129,7 @@ http://设备IP:18800
 升级时可以使用：
 
 ```bash
-./scripts/upgrade-h618-web.sh ./picoclaw-web-linux-arm64
+./scripts/upgrade-h618-web.sh ./picoclaw-web-linux-arm64 ./picoclaw
 ```
 
 它会：
@@ -164,8 +170,9 @@ Web 启动器自己的监听配置保存在：
 1. 停掉旧进程
 2. 备份 `/data/picoclaw/config.json`
 3. 替换 `/opt/picoclaw/current/picoclaw-web-linux-arm64`
-4. 启动新版本
-5. 用 Web UI 检查 channels、models、skills 是否正常
+4. 替换 `/opt/picoclaw/current/picoclaw`
+5. 启动新版本
+6. 用 Web UI 检查 channels、models、skills 是否正常
 
 不要把客户配置直接放进程序目录，否则升级时很容易被覆盖。
 
@@ -186,6 +193,7 @@ Web 启动器自己的监听配置保存在：
 
 ```text
 picoclaw-web-linux-arm64
+picoclaw
 scripts/install-h618-web.sh
 scripts/upgrade-h618-web.sh
 deploy/systemd/picoclaw-web.service
@@ -211,6 +219,7 @@ docs/zh/h618-web-deploy.md
   - `linux/arm64` 二进制可启动
   - `install-h618-web.sh` 可完成目录初始化
   - `systemd` 服务可正常拉起 `picoclaw-web`
+  - Web UI 可正常启动 `picoclaw gateway`
   - 设备本机 `curl http://127.0.0.1:18800/api/config` 可返回 JSON
   - 更新到 `custom/h618-migration` 最新二进制后，服务仍可正常重启
   - `/data/picoclaw/config.json` 已验证可以切换为：
