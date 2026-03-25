@@ -8,6 +8,7 @@
 
 ```text
 picoclaw-web-linux-arm64
+picoclaw
 install-h618-web.sh
 upgrade-h618-web.sh
 picoclaw-web.service
@@ -28,7 +29,7 @@ h618-web-deploy.md
 
 1. 确认当前分支是 `custom/h618-migration`
 2. 确认工作树干净
-3. 构建 `linux/arm64` 的 `picoclaw-web`
+3. 构建 `linux/arm64` 的 `picoclaw-web` 和 `picoclaw`
 4. 检查 `config/config.example.json` 默认是 `skillhub=true`
 5. 检查安装脚本、升级脚本、systemd 文件都在
 
@@ -43,10 +44,12 @@ h618-web-deploy.md
 5. 安装 skill
 6. 升级
 7. 再次打开 Web UI
+8. 点击“启动服务”并确认网关能正常运行
 
 ## 当前已验证设备
 
 - `192.168.1.61`
 - Armbian `aarch64`
 - 已验证 Web 服务正常
+- 已验证 Web UI 可正常启动网关
 - 已验证 `skillhub` 搜索和安装正常

@@ -1,5 +1,6 @@
 import { useAtomValue } from "jotai"
 import { useCallback, useEffect, useState } from "react"
+import { toast } from "sonner"
 
 import { restartGateway, startGateway, stopGateway } from "@/api/gateway"
 import {
@@ -32,6 +33,7 @@ export function useGateway() {
       })
     } catch (err) {
       console.error("Failed to start gateway:", err)
+      toast.error(err instanceof Error ? err.message : "Failed to start gateway")
     } finally {
       await refreshGatewayState({ force: true })
       setLoading(false)
@@ -45,6 +47,7 @@ export function useGateway() {
       await stopGateway()
     } catch (err) {
       console.error("Failed to stop gateway:", err)
+      toast.error(err instanceof Error ? err.message : "Failed to stop gateway")
       cancelGatewayStoppingTransition()
     } finally {
       await refreshGatewayState({ force: true })
@@ -64,6 +67,9 @@ export function useGateway() {
       })
     } catch (err) {
       console.error("Failed to restart gateway:", err)
+      toast.error(
+        err instanceof Error ? err.message : "Failed to restart gateway",
+      )
     } finally {
       await refreshGatewayState({ force: true })
       setLoading(false)
