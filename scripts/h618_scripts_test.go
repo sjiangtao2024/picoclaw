@@ -13,9 +13,12 @@ func TestInstallH618WebInstallsLauncherAndGatewayBinaries(t *testing.T) {
 	scriptPath := "./install-h618-web.sh"
 
 	tmpDir := t.TempDir()
-	installRoot := filepath.Join(tmpDir, "opt", "picoclaw", "current")
-	dataRoot := filepath.Join(tmpDir, "data", "picoclaw")
+	installRoot := filepath.Join(tmpDir, "root", "picoclaw")
+	binDir := filepath.Join(installRoot, "bin")
+	configDir := filepath.Join(installRoot, "config")
+	logDir := filepath.Join(installRoot, "logs")
 	servicePath := filepath.Join(tmpDir, "systemd", "picoclaw-web.service")
+	commandBinDir := filepath.Join(tmpDir, "usr-local-bin")
 	fakeBinDir := filepath.Join(tmpDir, "bin")
 
 	if err := os.MkdirAll(fakeBinDir, 0o755); err != nil {
@@ -43,8 +46,8 @@ func TestInstallH618WebInstallsLauncherAndGatewayBinaries(t *testing.T) {
 	cmd.Env = append(os.Environ(),
 		"PATH="+fakeBinDir+":"+os.Getenv("PATH"),
 		"INSTALL_ROOT="+installRoot,
-		"DATA_ROOT="+dataRoot,
 		"SERVICE_PATH="+servicePath,
+		"COMMAND_BIN_DIR="+commandBinDir,
 	)
 
 	out, err := cmd.CombinedOutput()
@@ -52,14 +55,54 @@ func TestInstallH618WebInstallsLauncherAndGatewayBinaries(t *testing.T) {
 		t.Fatalf("install script failed: %v\n%s", err, out)
 	}
 
-	if _, err := os.Stat(filepath.Join(installRoot, "picoclaw-web-linux-arm64")); err != nil {
+	if _, err := os.Stat(filepath.Join(binDir, "picoclaw-web")); err != nil {
 		t.Fatalf("launcher binary missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(installRoot, "picoclaw")); err != nil {
+	if _, err := os.Stat(filepath.Join(binDir, "picoclaw")); err != nil {
 		t.Fatalf("gateway binary missing: %v", err)
 	}
 	if _, err := os.Stat(servicePath); err != nil {
 		t.Fatalf("service file missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "config.json")); err != nil {
+		t.Fatalf("config.json missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "launcher-config.json")); err != nil {
+		t.Fatalf("launcher-config.json missing: %v", err)
+	}
+	if _, err := os.Stat(logDir); err != nil {
+		t.Fatalf("logs dir missing: %v", err)
+	}
+	for _, wrapperName := range []string{"picoclaw", "picoclaw-web"} {
+		wrapperPath := filepath.Join(commandBinDir, wrapperName)
+		wrapperData, err := os.ReadFile(wrapperPath)
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", wrapperPath, err)
+		}
+		wrapperText := string(wrapperData)
+		for _, want := range []string{
+			installRoot,
+			filepath.Join(configDir, "config.json"),
+		} {
+			if !strings.Contains(wrapperText, want) {
+				t.Fatalf("wrapper %s missing %q:\n%s", wrapperName, want, wrapperText)
+			}
+		}
+	}
+
+	serviceData, err := os.ReadFile(servicePath)
+	if err != nil {
+		t.Fatalf("ReadFile(servicePath): %v", err)
+	}
+	serviceText := string(serviceData)
+	for _, want := range []string{
+		"WorkingDirectory="+installRoot,
+		"ExecStart=" + filepath.Join(installRoot, "bin", "picoclaw-web") + " --no-browser " + filepath.Join(installRoot, "config", "config.json"),
+		"Environment=PICOCLAW_HOME=" + installRoot,
+	} {
+		if !strings.Contains(serviceText, want) {
+			t.Fatalf("service file missing %q:\n%s", want, serviceText)
+		}
 	}
 
 	logData, err := os.ReadFile(systemctlLog)
@@ -79,15 +122,17 @@ func TestUpgradeH618WebInstallsUpdatedGatewayBinary(t *testing.T) {
 	scriptPath := "./upgrade-h618-web.sh"
 
 	tmpDir := t.TempDir()
-	installRoot := filepath.Join(tmpDir, "opt", "picoclaw", "current")
-	backupDir := filepath.Join(tmpDir, "opt", "picoclaw", "backups")
+	installRoot := filepath.Join(tmpDir, "root", "picoclaw")
+	binDir := filepath.Join(installRoot, "bin")
+	backupDir := filepath.Join(installRoot, "backups")
+	commandBinDir := filepath.Join(tmpDir, "usr-local-bin")
 	fakeBinDir := filepath.Join(tmpDir, "bin")
 
 	if err := os.MkdirAll(fakeBinDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(fakeBinDir): %v", err)
 	}
-	if err := os.MkdirAll(installRoot, 0o755); err != nil {
-		t.Fatalf("MkdirAll(installRoot): %v", err)
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(binDir): %v", err)
 	}
 
 	systemctlLog := filepath.Join(tmpDir, "systemctl.log")
@@ -96,10 +141,10 @@ func TestUpgradeH618WebInstallsUpdatedGatewayBinary(t *testing.T) {
 		t.Fatalf("WriteFile(systemctlStub): %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(installRoot, "picoclaw-web-linux-arm64"), []byte("old-web"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(binDir, "picoclaw-web"), []byte("old-web"), 0o755); err != nil {
 		t.Fatalf("WriteFile(old web): %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(installRoot, "picoclaw"), []byte("old-gateway"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(binDir, "picoclaw"), []byte("old-gateway"), 0o755); err != nil {
 		t.Fatalf("WriteFile(old gateway): %v", err)
 	}
 
@@ -118,6 +163,7 @@ func TestUpgradeH618WebInstallsUpdatedGatewayBinary(t *testing.T) {
 		"PATH="+fakeBinDir+":"+os.Getenv("PATH"),
 		"INSTALL_ROOT="+installRoot,
 		"BACKUP_DIR="+backupDir,
+		"COMMAND_BIN_DIR="+commandBinDir,
 	)
 
 	out, err := cmd.CombinedOutput()
@@ -125,7 +171,7 @@ func TestUpgradeH618WebInstallsUpdatedGatewayBinary(t *testing.T) {
 		t.Fatalf("upgrade script failed: %v\n%s", err, out)
 	}
 
-	webData, err := os.ReadFile(filepath.Join(installRoot, "picoclaw-web-linux-arm64"))
+	webData, err := os.ReadFile(filepath.Join(binDir, "picoclaw-web"))
 	if err != nil {
 		t.Fatalf("ReadFile(installed web): %v", err)
 	}
@@ -133,12 +179,17 @@ func TestUpgradeH618WebInstallsUpdatedGatewayBinary(t *testing.T) {
 		t.Fatalf("installed web binary = %q, want %q", string(webData), "new-web")
 	}
 
-	gatewayData, err := os.ReadFile(filepath.Join(installRoot, "picoclaw"))
+	gatewayData, err := os.ReadFile(filepath.Join(binDir, "picoclaw"))
 	if err != nil {
 		t.Fatalf("ReadFile(installed gateway): %v", err)
 	}
 	if string(gatewayData) != "new-gateway" {
 		t.Fatalf("installed gateway binary = %q, want %q", string(gatewayData), "new-gateway")
+	}
+	for _, wrapperName := range []string{"picoclaw", "picoclaw-web"} {
+		if _, err := os.Stat(filepath.Join(commandBinDir, wrapperName)); err != nil {
+			t.Fatalf("wrapper %s missing: %v", wrapperName, err)
+		}
 	}
 
 	backups, err := filepath.Glob(filepath.Join(backupDir, "*"))
