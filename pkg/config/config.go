@@ -1176,7 +1176,8 @@ type SearchCacheConfig struct {
 }
 
 type SkillsRegistriesConfig struct {
-	ClawHub ClawHubRegistryConfig `json:"clawhub"`
+	ClawHub  ClawHubRegistryConfig  `json:"clawhub"`
+	SkillHub SkillHubRegistryConfig `json:"skillhub"`
 }
 
 type SkillsGithubConfig struct {
@@ -1209,6 +1210,18 @@ type ClawHubRegistryConfig struct {
 	Timeout         int    `json:"timeout"           env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_TIMEOUT"`
 	MaxZipSize      int    `json:"max_zip_size"      env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_ZIP_SIZE"`
 	MaxResponseSize int    `json:"max_response_size" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_MAX_RESPONSE_SIZE"`
+}
+
+type SkillHubRegistryConfig struct {
+	Enabled                    bool   `json:"enabled"                       env:"PICOCLAW_SKILLS_REGISTRIES_SKILLHUB_ENABLED"`
+	SearchURL                  string `json:"search_url"                    env:"PICOCLAW_SKILLS_REGISTRIES_SKILLHUB_SEARCH_URL"`
+	PrimaryDownloadURLTemplate string `json:"primary_download_url_template" env:"PICOCLAW_SKILLS_REGISTRIES_SKILLHUB_PRIMARY_DOWNLOAD_URL_TEMPLATE"`
+	DownloadURLTemplate        string `json:"download_url_template"         env:"PICOCLAW_SKILLS_REGISTRIES_SKILLHUB_DOWNLOAD_URL_TEMPLATE"`
+	UseProxy                   *bool  `json:"use_proxy,omitempty"           env:"PICOCLAW_SKILLS_REGISTRIES_SKILLHUB_USE_PROXY"`
+	Proxy                      string `json:"proxy,omitempty"               env:"PICOCLAW_SKILLS_REGISTRIES_SKILLHUB_PROXY"`
+	Timeout                    int    `json:"timeout"                       env:"PICOCLAW_SKILLS_REGISTRIES_SKILLHUB_TIMEOUT"`
+	MaxZipSize                 int    `json:"max_zip_size"                  env:"PICOCLAW_SKILLS_REGISTRIES_SKILLHUB_MAX_ZIP_SIZE"`
+	MaxResponseSize            int    `json:"max_response_size"             env:"PICOCLAW_SKILLS_REGISTRIES_SKILLHUB_MAX_RESPONSE_SIZE"`
 }
 
 // AuthToken returns the ClawHub auth token
