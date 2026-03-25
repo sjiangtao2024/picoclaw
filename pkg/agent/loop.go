@@ -263,6 +263,8 @@ func registerSharedTools(
 					Enabled:         clawHubConfig.Enabled,
 					BaseURL:         clawHubConfig.BaseURL,
 					AuthToken:       clawHubConfig.AuthToken(),
+					UseProxy:        clawHubConfig.UseProxy,
+					Proxy:           clawHubConfig.Proxy,
 					SearchPath:      clawHubConfig.SearchPath,
 					SkillsPath:      clawHubConfig.SkillsPath,
 					DownloadPath:    clawHubConfig.DownloadPath,

@@ -2,6 +2,7 @@ package feishu
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 
 // mentionPlaceholderRegex matches @_user_N placeholders inserted by Feishu for mentions.
 var mentionPlaceholderRegex = regexp.MustCompile(`@_user_\d+`)
+var markdownLinkRegex = regexp.MustCompile(`\[(.*?)\]\((.*?)\)`)
 
 // stringValue safely dereferences a *string pointer.
 func stringValue(v *string) string {
@@ -38,6 +40,178 @@ func buildMarkdownCard(content string) (string, error) {
 		return "", err
 	}
 	return string(data), nil
+}
+
+type repoRow struct {
+	Name        string
+	URL         string
+	Description string
+	Why         string
+}
+
+func buildRepoRecommendationCard(content string) (string, bool, error) {
+	rows, ok := parseRepoRowsFromMarkdownTable(content)
+	if !ok {
+		return "", false, nil
+	}
+
+	elements := make([]map[string]any, 0, len(rows)+1)
+	elements = append(elements, map[string]any{
+		"tag":     "markdown",
+		"content": "## Repository Recommendations",
+	})
+
+	for _, row := range rows {
+		var parts []string
+		if row.URL != "" {
+			parts = append(parts, fmt.Sprintf("**[%s](%s)**", row.Name, row.URL))
+		} else {
+			parts = append(parts, fmt.Sprintf("**%s**", row.Name))
+		}
+		if row.Description != "" {
+			parts = append(parts, row.Description)
+		}
+		if row.Why != "" {
+			parts = append(parts, "Why: "+row.Why)
+		}
+
+		elements = append(elements, map[string]any{
+			"tag":     "markdown",
+			"content": strings.Join(parts, "\n"),
+		})
+	}
+
+	card := map[string]any{
+		"schema": "2.0",
+		"body": map[string]any{
+			"elements": elements,
+		},
+	}
+	data, err := json.Marshal(card)
+	if err != nil {
+		return "", false, err
+	}
+	return string(data), true, nil
+}
+
+func parseRepoRowsFromMarkdownTable(content string) ([]repoRow, bool) {
+	lines := strings.Split(content, "\n")
+	tableLines := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "|") && strings.HasSuffix(trimmed, "|") {
+			tableLines = append(tableLines, trimmed)
+		}
+	}
+	if len(tableLines) < 3 {
+		return nil, false
+	}
+
+	header := parseTableRow(tableLines[0])
+	if len(header) < 2 || !isTableDivider(tableLines[1]) {
+		return nil, false
+	}
+
+	repoIdx := findColumnIndex(header, "repository", "repo", "project", "仓库", "项目")
+	descIdx := findColumnIndex(header, "description", "summary", "desc", "简介", "说明")
+	whyIdx := findColumnIndex(header, "why", "reason", "use case", "notes", "推荐理由", "适用场景")
+	if repoIdx < 0 || descIdx < 0 {
+		return nil, false
+	}
+
+	rows := make([]repoRow, 0, len(tableLines)-2)
+	for _, line := range tableLines[2:] {
+		cols := parseTableRow(line)
+		if repoIdx >= len(cols) || descIdx >= len(cols) {
+			continue
+		}
+
+		name, url := parseMarkdownLink(cols[repoIdx])
+		if name == "" {
+			name = stripMd(cols[repoIdx])
+		}
+		description := stripMd(cols[descIdx])
+		why := ""
+		if whyIdx >= 0 && whyIdx < len(cols) {
+			why = stripMd(cols[whyIdx])
+		}
+		if name == "" || description == "" {
+			continue
+		}
+
+		rows = append(rows, repoRow{
+			Name:        name,
+			URL:         url,
+			Description: description,
+			Why:         why,
+		})
+	}
+
+	if len(rows) == 0 {
+		return nil, false
+	}
+	return rows, true
+}
+
+func parseTableRow(line string) []string {
+	trimmed := strings.TrimSpace(line)
+	trimmed = strings.TrimPrefix(trimmed, "|")
+	trimmed = strings.TrimSuffix(trimmed, "|")
+
+	parts := strings.Split(trimmed, "|")
+	row := make([]string, 0, len(parts))
+	for _, part := range parts {
+		row = append(row, strings.TrimSpace(part))
+	}
+	return row
+}
+
+func isTableDivider(line string) bool {
+	for _, col := range parseTableRow(line) {
+		if col == "" {
+			return false
+		}
+		for _, r := range col {
+			if r != '-' && r != ':' && r != ' ' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func findColumnIndex(header []string, keywords ...string) int {
+	for i, col := range header {
+		normalized := strings.ToLower(stripMd(col))
+		for _, keyword := range keywords {
+			if strings.Contains(normalized, keyword) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func parseMarkdownLink(s string) (string, string) {
+	matches := markdownLinkRegex.FindStringSubmatch(strings.TrimSpace(s))
+	if len(matches) != 3 {
+		return "", ""
+	}
+	return strings.TrimSpace(matches[1]), strings.TrimSpace(matches[2])
+}
+
+func stripMd(s string) string {
+	s = strings.TrimSpace(s)
+	s = markdownLinkRegex.ReplaceAllString(s, "$1")
+	replacer := strings.NewReplacer(
+		"**", "",
+		"__", "",
+		"`", "",
+		"*", "",
+		"_", "",
+	)
+	s = replacer.Replace(s)
+	return strings.TrimSpace(s)
 }
 
 // extractJSONStringField unmarshals content as JSON and returns the value of the given string field.

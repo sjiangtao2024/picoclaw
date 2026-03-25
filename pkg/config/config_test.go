@@ -116,6 +116,9 @@ func TestAgentConfig_FullParse(t *testing.T) {
 				{
 					"id": "support",
 					"name": "Support Bot",
+					"max_tokens": 2048,
+					"temperature": 0,
+					"max_tool_iterations": 3,
 					"model": {
 						"primary": "claude-opus",
 						"fallbacks": ["haiku"]
@@ -167,6 +170,15 @@ func TestAgentConfig_FullParse(t *testing.T) {
 	}
 	if support.Model == nil || support.Model.Primary != "claude-opus" {
 		t.Errorf("support.Model = %+v", support.Model)
+	}
+	if support.MaxTokens == nil || *support.MaxTokens != 2048 {
+		t.Errorf("support.MaxTokens = %v", support.MaxTokens)
+	}
+	if support.Temperature == nil || *support.Temperature != 0 {
+		t.Errorf("support.Temperature = %v", support.Temperature)
+	}
+	if support.MaxToolIterations == nil || *support.MaxToolIterations != 3 {
+		t.Errorf("support.MaxToolIterations = %v", support.MaxToolIterations)
 	}
 	if len(support.Model.Fallbacks) != 1 || support.Model.Fallbacks[0] != "haiku" {
 		t.Errorf("support.Model.Fallbacks = %v", support.Model.Fallbacks)

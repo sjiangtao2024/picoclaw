@@ -98,6 +98,83 @@ func TestNewAgentInstance_DefaultsTemperatureWhenUnset(t *testing.T) {
 	}
 }
 
+func TestNewAgentInstance_AgentOverridesLLMSettings(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	defaultTemp := 0.8
+	overrideTemp := 0.0
+	overrideMaxTokens := 2048
+	overrideMaxIterations := 3
+
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         8192,
+				MaxToolIterations: 10,
+				Temperature:       &defaultTemp,
+			},
+		},
+	}
+
+	agentCfg := &config.AgentConfig{
+		ID:                "worker",
+		MaxTokens:         &overrideMaxTokens,
+		MaxToolIterations: &overrideMaxIterations,
+		Temperature:       &overrideTemp,
+	}
+
+	agent := NewAgentInstance(agentCfg, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if agent.MaxTokens != overrideMaxTokens {
+		t.Fatalf("MaxTokens = %d, want %d", agent.MaxTokens, overrideMaxTokens)
+	}
+	if agent.MaxIterations != overrideMaxIterations {
+		t.Fatalf("MaxIterations = %d, want %d", agent.MaxIterations, overrideMaxIterations)
+	}
+	if agent.Temperature != overrideTemp {
+		t.Fatalf("Temperature = %f, want %f", agent.Temperature, overrideTemp)
+	}
+}
+
+func TestNewAgentInstance_AgentInheritsLLMSettingsWhenUnset(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "agent-instance-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	defaultTemp := 0.5
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 9,
+				Temperature:       &defaultTemp,
+			},
+		},
+	}
+
+	agent := NewAgentInstance(&config.AgentConfig{ID: "worker"}, &cfg.Agents.Defaults, cfg, &mockProvider{})
+
+	if agent.MaxTokens != 4096 {
+		t.Fatalf("MaxTokens = %d, want %d", agent.MaxTokens, 4096)
+	}
+	if agent.MaxIterations != 9 {
+		t.Fatalf("MaxIterations = %d, want %d", agent.MaxIterations, 9)
+	}
+	if agent.Temperature != defaultTemp {
+		t.Fatalf("Temperature = %f, want %f", agent.Temperature, defaultTemp)
+	}
+}
+
 func TestNewAgentInstance_ResolveCandidatesFromModelListAlias(t *testing.T) {
 	tests := []struct {
 		name         string

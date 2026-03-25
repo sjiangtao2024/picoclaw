@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -216,6 +217,48 @@ func TestClawHubRegistryDownloadAndInstallRetries429(t *testing.T) {
 	skillContent, err := os.ReadFile(filepath.Join(targetDir, "SKILL.md"))
 	require.NoError(t, err)
 	assert.Contains(t, string(skillContent), "Hello skill")
+}
+
+func TestNewClawHubRegistryUsesConfiguredProxy(t *testing.T) {
+	useProxy := true
+	reg := NewClawHubRegistry(ClawHubConfig{
+		Enabled:   true,
+		BaseURL:   "https://clawhub.ai",
+		Proxy:     "http://127.0.0.1:7890",
+		UseProxy:  &useProxy,
+		AuthToken: "token",
+	})
+
+	transport, ok := reg.client.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.NotNil(t, transport.Proxy)
+
+	req := &http.Request{URL: mustParseURL(t, "https://clawhub.ai/api/v1/search")}
+	proxyURL, err := transport.Proxy(req)
+	require.NoError(t, err)
+	require.NotNil(t, proxyURL)
+	assert.Equal(t, "http://127.0.0.1:7890", proxyURL.String())
+}
+
+func TestNewClawHubRegistryCanDisableProxy(t *testing.T) {
+	useProxy := false
+	reg := NewClawHubRegistry(ClawHubConfig{
+		Enabled:  true,
+		BaseURL:  "https://clawhub.ai",
+		Proxy:    "http://127.0.0.1:7890",
+		UseProxy: &useProxy,
+	})
+
+	transport, ok := reg.client.Transport.(*http.Transport)
+	require.True(t, ok)
+	assert.Nil(t, transport.Proxy)
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(raw)
+	require.NoError(t, err)
+	return u
 }
 
 func TestClawHubRegistryAuthToken(t *testing.T) {

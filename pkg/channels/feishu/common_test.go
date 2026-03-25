@@ -2,6 +2,7 @@ package feishu
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -224,6 +225,75 @@ func TestBuildMarkdownCard(t *testing.T) {
 				t.Errorf("content = %v, want %q", elem["content"], tt.content)
 			}
 		})
+	}
+}
+
+func TestBuildRepoRecommendationCard(t *testing.T) {
+	content := strings.TrimSpace(`
+| Repository | Description | Why |
+| --- | --- | --- |
+| [sipeed/picoclaw](https://github.com/sipeed/picoclaw) | Lightweight agent runtime | Good fit for H618 |
+| [Tencent-RTC/tencent-rtc-skills](https://github.com/Tencent-RTC/tencent-rtc-skills) | RTC related skills | Useful add-ons |
+`)
+
+	card, ok, err := buildRepoRecommendationCard(content)
+	if err != nil {
+		t.Fatalf("buildRepoRecommendationCard() unexpected error: %v", err)
+	}
+	if !ok {
+		t.Fatal("buildRepoRecommendationCard() = not matched, want matched")
+	}
+
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(card), &parsed); err != nil {
+		t.Fatalf("buildRepoRecommendationCard() produced invalid JSON: %v", err)
+	}
+
+	body, ok := parsed["body"].(map[string]any)
+	if !ok {
+		t.Fatal("missing body")
+	}
+	elements, ok := body["elements"].([]any)
+	if !ok {
+		t.Fatal("missing elements")
+	}
+	if len(elements) < 3 {
+		t.Fatalf("elements len = %d, want >= 3", len(elements))
+	}
+
+	first, ok := elements[0].(map[string]any)
+	if !ok {
+		t.Fatal("first element is not an object")
+	}
+	if first["tag"] != "markdown" {
+		t.Fatalf("first element tag = %v, want markdown", first["tag"])
+	}
+	if !strings.Contains(first["content"].(string), "Repository Recommendations") {
+		t.Fatalf("first element content = %q, want title", first["content"])
+	}
+
+	second, ok := elements[1].(map[string]any)
+	if !ok {
+		t.Fatal("second element is not an object")
+	}
+	if !strings.Contains(second["content"].(string), "sipeed/picoclaw") {
+		t.Fatalf("second element content = %q, want repo name", second["content"])
+	}
+	if !strings.Contains(second["content"].(string), "Good fit for H618") {
+		t.Fatalf("second element content = %q, want why text", second["content"])
+	}
+}
+
+func TestBuildRepoRecommendationCardNoMatch(t *testing.T) {
+	card, ok, err := buildRepoRecommendationCard("plain text response")
+	if err != nil {
+		t.Fatalf("buildRepoRecommendationCard() unexpected error: %v", err)
+	}
+	if ok {
+		t.Fatalf("buildRepoRecommendationCard() = matched with card %q, want no match", card)
+	}
+	if card != "" {
+		t.Fatalf("card = %q, want empty", card)
 	}
 }
 

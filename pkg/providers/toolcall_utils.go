@@ -9,7 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync/atomic"
+	"time"
 )
+
+var toolCallIDSeq uint64
 
 // buildCLIToolsPrompt creates the tool definitions section for a CLI provider system prompt.
 func buildCLIToolsPrompt(tools []ToolDefinition) string {
@@ -48,6 +52,16 @@ func buildCLIToolsPrompt(tools []ToolDefinition) string {
 // and ensures both are populated consistently.
 func NormalizeToolCall(tc ToolCall) ToolCall {
 	normalized := tc
+
+	// Ensure a stable tool_call_id exists so follow-up tool results can refer to it.
+	if normalized.ID == "" {
+		normalized.ID = fmt.Sprintf("call_%d_%d", time.Now().UnixNano(), atomic.AddUint64(&toolCallIDSeq, 1))
+	}
+
+	// OpenAI-compatible payloads should explicitly mark tool calls as function calls.
+	if normalized.Type == "" {
+		normalized.Type = "function"
+	}
 
 	// Ensure Name is populated from Function if not set
 	if normalized.Name == "" && normalized.Function != nil {

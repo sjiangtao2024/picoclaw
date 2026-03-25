@@ -5,6 +5,7 @@
     "models": "模型",
     "credentials": "凭据",
     "agent_group": "智能体",
+    "agent_settings": "Agent 设置",
     "skills": "技能",
     "tools": "工具",
     "services": "服务",
@@ -358,6 +359,26 @@
   "pages": {
     "agent": {
       "load_error": "加载 Agent 支持信息失败。",
+      "settings": {
+        "description": "为单个 Agent 覆盖运行时限制。留空表示继续继承全局配置页中的默认值。",
+        "defaults_title": "当前默认值",
+        "defaults_description": "这里展示的是 agents.defaults 中的值；当 Agent 级字段留空时会使用这些默认值。",
+        "empty": "当前还没有配置命名 Agent。如需做单独覆盖，请先在原始配置中添加 agents.list。",
+        "save_success": "Agent 设置已保存。",
+        "save_error": "保存 Agent 设置失败。",
+        "reset_success": "Agent 设置已重置为上次保存的状态。",
+        "default_badge": "默认",
+        "agent_id": "Agent ID：{{id}}",
+        "inherit_hint": "留空表示继承 agents.defaults。",
+        "inherit_placeholder": "继承默认值",
+        "unset": "未设置",
+        "temperature_hint": "可选小数值。留空时使用默认温度。",
+        "fields": {
+          "max_tokens": "最大 Token 数",
+          "temperature": "温度",
+          "max_tool_iterations": "最大工具迭代次数"
+        }
+      },
       "skills": {
         "description": "技能会从工作区、PicoClaw 全局目录和内置目录中加载。",
         "empty": "当前没有可用技能。",

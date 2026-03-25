@@ -20,6 +20,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/constants"
+	"github.com/sipeed/picoclaw/pkg/formatters"
 	"github.com/sipeed/picoclaw/pkg/health"
 	"github.com/sipeed/picoclaw/pkg/logger"
 	"github.com/sipeed/picoclaw/pkg/media"
@@ -618,6 +619,7 @@ func (m *Manager) runWorker(ctx context.Context, name string, w *channelWorker) 
 			if !ok {
 				return
 			}
+			msg.Content = formatters.Format(name, msg.Content)
 			maxLen := 0
 			if mlp, ok := w.ch.(MessageLengthProvider); ok {
 				maxLen = mlp.MaxMessageLength()

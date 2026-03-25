@@ -69,6 +69,8 @@ type ClawHubConfig struct {
 	Enabled         bool
 	BaseURL         string
 	AuthToken       string
+	UseProxy        *bool
+	Proxy           string
 	SearchPath      string // e.g. "/api/v1/search"
 	SkillsPath      string // e.g. "/api/v1/skills"
 	DownloadPath    string // e.g. "/api/v1/download"
