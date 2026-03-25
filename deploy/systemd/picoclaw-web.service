@@ -1,0 +1,15 @@
+[Unit]
+Description=PicoClaw Web
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/data/picoclaw
+ExecStart=/opt/picoclaw/current/picoclaw-web-linux-arm64 --no-browser /data/picoclaw/config.json
+Restart=always
+RestartSec=3
+Environment=PICOCLAW_HOME=/data/picoclaw
+
+[Install]
+WantedBy=multi-user.target
