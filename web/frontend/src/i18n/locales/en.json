@@ -5,6 +5,7 @@
     "models": "Models",
     "credentials": "Credentials",
     "agent_group": "Agent",
+    "agent_settings": "Agent Settings",
     "skills": "Skills",
     "tools": "Tools",
     "services": "Services",
@@ -376,6 +377,26 @@
   "pages": {
     "agent": {
       "load_error": "Failed to load agent support information.",
+      "settings": {
+        "description": "Override runtime limits for individual agents. Leave a field empty to inherit the default value from the global Config page.",
+        "defaults_title": "Current Default Values",
+        "defaults_description": "These are the values from agents.defaults used when an agent-specific field is left empty.",
+        "empty": "No named agents are configured yet. Add agents in raw config first if you need per-agent overrides.",
+        "save_success": "Agent settings saved.",
+        "save_error": "Failed to save agent settings.",
+        "reset_success": "Agent settings reset to the last saved state.",
+        "default_badge": "Default",
+        "agent_id": "Agent ID: {{id}}",
+        "inherit_hint": "Leave empty to inherit from agents.defaults.",
+        "inherit_placeholder": "inherit default",
+        "unset": "unset",
+        "temperature_hint": "Optional decimal value. Leave empty to use the default temperature.",
+        "fields": {
+          "max_tokens": "Max Tokens",
+          "temperature": "Temperature",
+          "max_tool_iterations": "Max Tool Iterations"
+        }
+      },
       "skills": {
         "description": "Skills are loaded from the workspace, global PicoClaw home, and builtin directories.",
         "empty": "No skills are currently available.",

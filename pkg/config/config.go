@@ -236,13 +236,16 @@ func (m AgentModelConfig) MarshalJSON() ([]byte, error) {
 }
 
 type AgentConfig struct {
-	ID        string            `json:"id"`
-	Default   bool              `json:"default,omitempty"`
-	Name      string            `json:"name,omitempty"`
-	Workspace string            `json:"workspace,omitempty"`
-	Model     *AgentModelConfig `json:"model,omitempty"`
-	Skills    []string          `json:"skills,omitempty"`
-	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
+	ID                string            `json:"id"`
+	Default           bool              `json:"default,omitempty"`
+	Name              string            `json:"name,omitempty"`
+	Workspace         string            `json:"workspace,omitempty"`
+	Model             *AgentModelConfig `json:"model,omitempty"`
+	MaxTokens         *int              `json:"max_tokens,omitempty"`
+	Temperature       *float64          `json:"temperature,omitempty"`
+	MaxToolIterations *int              `json:"max_tool_iterations,omitempty"`
+	Skills            []string          `json:"skills,omitempty"`
+	Subagents         *SubagentsConfig  `json:"subagents,omitempty"`
 }
 
 type SubagentsConfig struct {
@@ -1198,6 +1201,8 @@ type ClawHubRegistryConfig struct {
 	BaseURL         string `json:"base_url"          env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_BASE_URL"`
 	authToken       string
 	secDirty        bool
+	UseProxy        *bool  `json:"use_proxy,omitempty" env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_USE_PROXY"`
+	Proxy           string `json:"proxy,omitempty"   env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_PROXY"`
 	SearchPath      string `json:"search_path"       env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SEARCH_PATH"`
 	SkillsPath      string `json:"skills_path"       env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_SKILLS_PATH"`
 	DownloadPath    string `json:"download_path"     env:"PICOCLAW_SKILLS_REGISTRIES_CLAWHUB_DOWNLOAD_PATH"`

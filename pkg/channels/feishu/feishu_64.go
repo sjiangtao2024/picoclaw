@@ -140,8 +140,13 @@ func (c *FeishuChannel) Send(ctx context.Context, msg bus.OutboundMessage) error
 		return fmt.Errorf("chat ID is empty: %w", channels.ErrSendFailed)
 	}
 
-	// Build interactive card with markdown content
-	cardContent, err := buildMarkdownCard(msg.Content)
+	cardContent, matchedRepoCard, err := buildRepoRecommendationCard(msg.Content)
+	if err != nil {
+		return c.sendText(ctx, msg.ChatID, msg.Content)
+	}
+	if !matchedRepoCard {
+		cardContent, err = buildMarkdownCard(msg.Content)
+	}
 	if err != nil {
 		// If card build fails, fall back to plain text
 		return c.sendText(ctx, msg.ChatID, msg.Content)

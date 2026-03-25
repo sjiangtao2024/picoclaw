@@ -203,3 +203,34 @@ func TestAgentInstance_FallbackExplicitEmpty(t *testing.T) {
 		t.Errorf("expected 0 fallbacks (explicit empty), got %d: %v", len(agent.Fallbacks), agent.Fallbacks)
 	}
 }
+
+func TestAgentInstance_PerAgentLLMOverrides(t *testing.T) {
+	temp := 0.0
+	maxTokens := 2048
+	maxToolIterations := 3
+
+	cfg := testCfg([]config.AgentConfig{
+		{
+			ID:                "worker",
+			Default:           true,
+			MaxTokens:         &maxTokens,
+			MaxToolIterations: &maxToolIterations,
+			Temperature:       &temp,
+		},
+	})
+
+	registry := NewAgentRegistry(cfg, &mockRegistryProvider{})
+	agent, ok := registry.GetAgent("worker")
+	if !ok || agent == nil {
+		t.Fatal("expected to find 'worker' agent")
+	}
+	if agent.MaxTokens != maxTokens {
+		t.Fatalf("MaxTokens = %d, want %d", agent.MaxTokens, maxTokens)
+	}
+	if agent.MaxIterations != maxToolIterations {
+		t.Fatalf("MaxIterations = %d, want %d", agent.MaxIterations, maxToolIterations)
+	}
+	if agent.Temperature != temp {
+		t.Fatalf("Temperature = %f, want %f", agent.Temperature, temp)
+	}
+}
