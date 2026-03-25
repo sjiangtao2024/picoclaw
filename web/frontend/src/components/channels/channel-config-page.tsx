@@ -9,6 +9,10 @@ import {
   getChannelsCatalog,
   patchAppConfig,
 } from "@/api/channels"
+import {
+  buildEditConfig,
+  buildSavePayload,
+} from "@/components/channels/channel-config-utils"
 import { getChannelDisplayName } from "@/components/channels/channel-display-name"
 import { DiscordForm } from "@/components/channels/channel-forms/discord-form"
 import { FeishuForm } from "@/components/channels/channel-forms/feishu-form"
@@ -26,24 +30,6 @@ interface ChannelConfigPageProps {
   channelName: string
 }
 
-const SECRET_FIELD_MAP: Record<string, string> = {
-  token: "_token",
-  app_secret: "_app_secret",
-  client_secret: "_client_secret",
-  corp_secret: "_corp_secret",
-  channel_secret: "_channel_secret",
-  channel_access_token: "_channel_access_token",
-  access_token: "_access_token",
-  bot_token: "_bot_token",
-  app_token: "_app_token",
-  encoding_aes_key: "_encoding_aes_key",
-  encrypt_key: "_encrypt_key",
-  verification_token: "_verification_token",
-  password: "_password",
-  nickserv_password: "_nickserv_password",
-  sasl_password: "_sasl_password",
-}
-
 function asRecord(value: unknown): Record<string, unknown> {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>
@@ -59,16 +45,6 @@ function asBool(value: unknown): boolean {
   return value === true
 }
 
-function buildEditConfig(config: ChannelConfig): ChannelConfig {
-  const edit: ChannelConfig = { ...config }
-  for (const secretKey of Object.keys(SECRET_FIELD_MAP)) {
-    if (secretKey in config) {
-      edit[SECRET_FIELD_MAP[secretKey]] = ""
-    }
-  }
-  return edit
-}
-
 function normalizeConfig(
   channel: SupportedChannel,
   rawConfig: ChannelConfig,
@@ -81,37 +57,6 @@ function normalizeConfig(
     config.use_native = false
   }
   return config
-}
-
-function buildSavePayload(
-  channel: SupportedChannel,
-  editConfig: ChannelConfig,
-  enabled: boolean,
-): ChannelConfig {
-  const payload: ChannelConfig = { enabled }
-
-  for (const [key, value] of Object.entries(editConfig)) {
-    if (key.startsWith("_")) continue
-    if (key === "enabled") continue
-
-    if (key in SECRET_FIELD_MAP) {
-      const editKey = SECRET_FIELD_MAP[key]
-      const incoming = asString(editConfig[editKey])
-      payload[key] = incoming !== "" ? incoming : value
-      continue
-    }
-
-    payload[key] = value
-  }
-
-  if (channel.name === "whatsapp_native") {
-    payload.use_native = true
-  }
-  if (channel.name === "whatsapp") {
-    payload.use_native = false
-  }
-
-  return payload
 }
 
 function isConfigured(
