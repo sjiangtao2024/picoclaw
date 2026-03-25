@@ -180,6 +180,27 @@ Web 启动器自己的监听配置保存在：
 
 这条路线不依赖完整 plugin 系统，更适合 H618 这类资源受限设备。
 
+## 建议发布包内容
+
+对外打包时，建议至少包含这些文件：
+
+```text
+picoclaw-web-linux-arm64
+scripts/install-h618-web.sh
+scripts/upgrade-h618-web.sh
+deploy/systemd/picoclaw-web.service
+config/config.example.json
+docs/zh/h618-web-deploy.md
+```
+
+建议额外提供一份你们自己的客户交付说明，至少写清楚：
+
+- 默认 Web 端口
+- 默认局域网访问范围
+- 默认启用 `skillhub`、默认关闭 `clawhub`
+- 首次配置模型和渠道的方法
+- 升级时只替换二进制，不覆盖 `/data/picoclaw/`
+
 ## 真机验证记录
 
 已在一台 H618 设备上完成最小部署验证：
@@ -191,5 +212,24 @@ Web 启动器自己的监听配置保存在：
   - `install-h618-web.sh` 可完成目录初始化
   - `systemd` 服务可正常拉起 `picoclaw-web`
   - 设备本机 `curl http://127.0.0.1:18800/api/config` 可返回 JSON
+  - 更新到 `custom/h618-migration` 最新二进制后，服务仍可正常重启
+  - `/data/picoclaw/config.json` 已验证可以切换为：
+    - `tools.skills.registries.skillhub.enabled = true`
+    - `tools.skills.registries.clawhub.enabled = false`
+  - 在真机上已验证 `skillhub` 搜索和安装链路：
+    - 搜索 `github` 成功返回结果
+    - 安装 `github` 成功
+    - 安装落盘路径：`/data/picoclaw/workspace/skills-smoke/github`
 
 这说明当前仓库中的 H618 构建、安装和服务启动链路已经打通。
+
+## 建议发布前回归
+
+每次对外发版前，建议最少检查这几项：
+
+1. 从空目录运行 `install-h618-web.sh`
+2. 确认 `systemctl status picoclaw-web` 为 `active`
+3. 确认 Web UI 可打开并能保存配置
+4. 确认至少一个渠道能收发消息
+5. 确认 `skillhub` 搜索和安装正常
+6. 运行 `upgrade-h618-web.sh` 后再次确认服务和配置正常
