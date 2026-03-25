@@ -47,6 +47,23 @@ releases/h618/picoclaw-web-linux-arm64
 2. 构建并嵌入前端资源
 3. 交叉编译 `linux/arm64` 二进制
 
+## systemd 服务文件
+
+仓库里已经提供固定目录布局的 systemd unit：
+
+```text
+deploy/systemd/picoclaw-web.service
+```
+
+它默认使用：
+
+```text
+/opt/picoclaw/current/picoclaw-web-linux-arm64
+/data/picoclaw/config.json
+```
+
+如果你按本说明中的目录布局部署，通常不需要再手改 unit 文件。
+
 ## 部署到 H618
 
 把二进制和配置目录准备好：
@@ -80,6 +97,43 @@ Web 启动后默认端口是 `18800`。浏览器访问：
 ```text
 http://设备IP:18800
 ```
+
+## 一键安装
+
+在 H618 上可以直接使用仓库内脚本：
+
+```bash
+./scripts/install-h618-web.sh ./picoclaw-web-linux-arm64
+```
+
+它会完成：
+
+1. 安装二进制到 `/opt/picoclaw/current/`
+2. 初始化 `/data/picoclaw/`
+3. 安装 `systemd` 服务
+4. `enable --now` 启动服务
+
+注意：
+
+- 如果 `/data/picoclaw/config.json` 不存在，脚本会生成一个占位配置
+- 这个占位配置只能用于初始化目录，正式接入渠道和模型前必须补全
+
+## 一键升级
+
+升级时可以使用：
+
+```bash
+./scripts/upgrade-h618-web.sh ./picoclaw-web-linux-arm64
+```
+
+它会：
+
+1. 备份旧二进制到 `/opt/picoclaw/backups/`
+2. 停掉当前服务
+3. 替换新二进制
+4. 重新启动服务
+
+默认不会覆盖 `/data/picoclaw/config.json` 和 `/data/picoclaw/launcher-config.json`。
 
 ## launcher-config.json
 
