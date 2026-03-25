@@ -2,10 +2,12 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sipeed/picoclaw/pkg/config"
@@ -140,6 +142,96 @@ func TestHandlePatchConfig_AllowsInvalidExecRegexPatternsWhenExecDisabled(t *tes
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+}
+
+func TestHandlePatchConfig_PersistsFeishuSecretToSecurityFile(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"channels": {
+			"feishu": {
+				"enabled": true,
+				"app_id": "cli_test",
+				"app_secret": "feishu-secret"
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if !cfg.Channels.Feishu.Enabled {
+		t.Fatal("feishu enabled should persist after PATCH /api/config")
+	}
+	if got := cfg.Channels.Feishu.AppSecret(); got != "feishu-secret" {
+		t.Fatalf("feishu app secret = %q, want %q", got, "feishu-secret")
+	}
+
+	securityRaw, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), ".security.yml"))
+	if err != nil {
+		t.Fatalf("ReadFile(.security.yml) error = %v", err)
+	}
+	if !strings.Contains(string(securityRaw), "app_secret: feishu-secret") {
+		t.Fatalf("security file missing feishu secret:\n%s", securityRaw)
+	}
+}
+
+func TestHandleGetConfig_ExposesFeishuSecretPresenceHint(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg := config.DefaultConfig()
+	cfg.WithSecurity(&config.SecurityConfig{
+		ModelList: map[string]config.ModelSecurityEntry{},
+		Channels: &config.ChannelsSecurity{
+			Feishu: &config.FeishuSecurity{AppSecret: "feishu-secret"},
+		},
+	})
+	cfg.Channels.Feishu.Enabled = true
+	cfg.Channels.Feishu.AppID = "cli_test"
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	channels, ok := body["channels"].(map[string]any)
+	if !ok {
+		t.Fatalf("channels missing from response: %v", body)
+	}
+	feishu, ok := channels["feishu"].(map[string]any)
+	if !ok {
+		t.Fatalf("feishu missing from response: %v", channels)
+	}
+	if got := feishu["app_secret_set"]; got != true {
+		t.Fatalf("feishu.app_secret_set = %#v, want true", got)
 	}
 }
 

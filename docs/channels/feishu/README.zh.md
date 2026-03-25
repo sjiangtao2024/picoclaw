@@ -2,7 +2,7 @@
 
 # 飞书
 
-飞书（国际版名称：Lark）是字节跳动旗下的企业协作平台。它通过事件驱动的 Webhook 同时支持中国和全球市场。
+飞书（国际版名称：Lark）是字节跳动旗下的企业协作平台。PicoClaw 通过事件驱动的长连接（WebSocket/SDK 模式）接入飞书，中国版和国际版都支持。
 
 ## 配置
 
@@ -36,11 +36,19 @@
 ## 设置流程
 
 1. 前往 [飞书开放平台](https://open.feishu.cn/)（国际版用户请前往 [Lark 开放平台](https://open.larksuite.com/)）创建应用程序
-2. 获取 App ID 和 App Secret
-3. 配置事件订阅和Webhook URL
-4. 设置加密(可选,生产环境建议启用)
-5. 将 App ID、App Secret、Encrypt Key 和 Verification Token(如果启用加密) 填入配置文件中
-6. 自定义你希望 PicoClaw react 你消息时的表情（可选, Reference URL: [Feishu Emoji List](https://open.larkoffice.com/document/server-docs/im-v1/message-reaction/emojis-introduce))
+2. 在应用能力中启用“机器人”
+3. 在“事件订阅”中选择 **长连接 / WebSocket** 模式
+4. 订阅 PicoClaw 需要的消息事件 `im.message.receive_v1`
+5. 创建版本并发布应用；未发布时，机器人能力和事件订阅都不会生效
+6. 获取 App ID 和 App Secret
+7. 将 App ID、App Secret、Encrypt Key 和 Verification Token（如果启用加密）填入配置文件中
+8. 自定义你希望 PicoClaw react 你消息时的表情（可选, Reference URL: [Feishu Emoji List](https://open.larkoffice.com/document/server-docs/im-v1/message-reaction/emojis-introduce))
+
+> PicoClaw 使用飞书长连接模式，不需要公网 Webhook 地址。
+>
+> 如果日志里已经显示飞书长连接已连上，但机器人仍然收不到消息，优先检查：
+> 1. 是否订阅了 `im.message.receive_v1`
+> 2. 修改后是否重新发布了应用
 
 ## 平台限制
 

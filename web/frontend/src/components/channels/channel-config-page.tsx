@@ -12,6 +12,7 @@ import {
 import {
   buildEditConfig,
   buildSavePayload,
+  hasStoredSecret,
 } from "@/components/channels/channel-config-utils"
 import { getChannelDisplayName } from "@/components/channels/channel-display-name"
 import { DiscordForm } from "@/components/channels/channel-forms/discord-form"
@@ -73,7 +74,7 @@ function isConfigured(
       return asString(config.bot_token) !== ""
     case "feishu":
       return (
-        asString(config.app_id) !== "" && asString(config.app_secret) !== ""
+        asString(config.app_id) !== "" && hasStoredSecret(config, "app_secret")
       )
     case "dingtalk":
       return (
@@ -84,14 +85,14 @@ function isConfigured(
       return asString(config.channel_access_token) !== ""
     case "qq":
       return (
-        asString(config.app_id) !== "" && asString(config.app_secret) !== ""
+        asString(config.app_id) !== "" && hasStoredSecret(config, "app_secret")
       )
     case "onebot":
       return asString(config.ws_url) !== ""
     case "weixin":
       return asString(config.account_id) !== ""
     case "wecom":
-      return asString(config.bot_id) !== ""
+      return asString(config.bot_id) !== "" && hasStoredSecret(config, "secret")
     case "whatsapp":
       return asString(config.bridge_url) !== ""
     case "whatsapp_native":

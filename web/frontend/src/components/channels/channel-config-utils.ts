@@ -22,6 +22,17 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value : ""
 }
 
+function asBool(value: unknown): boolean {
+  return value === true
+}
+
+export function hasStoredSecret(config: ChannelConfig, key: string): boolean {
+  if (asString(config[key]).trim() !== "") {
+    return true
+  }
+  return asBool(config[`${key}_set`])
+}
+
 export function buildEditConfig(config: ChannelConfig): ChannelConfig {
   const edit: ChannelConfig = { ...config }
   for (const secretKey of Object.keys(SECRET_FIELD_MAP)) {
@@ -54,6 +65,7 @@ export function buildSavePayload(
   for (const [key, value] of Object.entries(editConfig)) {
     if (key.startsWith("_")) continue
     if (key === "enabled") continue
+    if (key.endsWith("_set")) continue
 
     if (key in SECRET_FIELD_MAP) {
       continue

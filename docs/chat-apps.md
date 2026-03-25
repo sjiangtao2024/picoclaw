@@ -433,6 +433,8 @@ PicoClaw connects to Feishu via WebSocket/SDK mode — no public webhook URL or 
 
 * Go to [Feishu Open Platform](https://open.feishu.cn/) and create an application
 * In the app settings, enable the **Bot** capability
+* In **Event Subscriptions**, choose **Long Connection / WebSocket** mode
+* Subscribe to the message event `im.message.receive_v1`
 * Create a version and publish the app (the app must be published to take effect)
 * Copy the **App ID** (starts with `cli_`) and **App Secret**
 
@@ -460,6 +462,8 @@ picoclaw gateway
 ```
 
 Open Feishu, search for your bot name, and start chatting. You can also add the bot to a group — use `group_trigger.mention_only: true` to only respond when @mentioned.
+
+If the bot connects but never replies, first check that `im.message.receive_v1` is subscribed and that the latest app version has been published after changing event settings.
 
 For full options, see [Feishu Channel Configuration Guide](channels/feishu/README.md).
 
