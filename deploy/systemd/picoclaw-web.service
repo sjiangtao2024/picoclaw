@@ -5,11 +5,11 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/data/picoclaw
-ExecStart=/opt/picoclaw/current/picoclaw-web-linux-arm64 --no-browser /data/picoclaw/config.json
+WorkingDirectory=__PICOCLAW_ROOT__
+ExecStart=__PICOCLAW_WEB_BIN__ --no-browser __PICOCLAW_CONFIG__
 Restart=always
 RestartSec=3
-Environment=PICOCLAW_HOME=/data/picoclaw
+Environment=PICOCLAW_HOME=__PICOCLAW_ROOT__
 
 [Install]
 WantedBy=multi-user.target
