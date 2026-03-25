@@ -179,3 +179,17 @@ Web 启动器自己的监听配置保存在：
 - Agent 单独参数覆盖通过 Web UI 的 Agent Settings 页面配置
 
 这条路线不依赖完整 plugin 系统，更适合 H618 这类资源受限设备。
+
+## 真机验证记录
+
+已在一台 H618 设备上完成最小部署验证：
+
+- 设备地址：`192.168.1.61`
+- 系统：Armbian `aarch64`
+- 验证项：
+  - `linux/arm64` 二进制可启动
+  - `install-h618-web.sh` 可完成目录初始化
+  - `systemd` 服务可正常拉起 `picoclaw-web`
+  - 设备本机 `curl http://127.0.0.1:18800/api/config` 可返回 JSON
+
+这说明当前仓库中的 H618 构建、安装和服务启动链路已经打通。
