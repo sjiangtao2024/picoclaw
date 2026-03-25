@@ -67,6 +67,12 @@ type startupBlockedProvider struct {
 	reason string
 }
 
+func markHealthReady(server *health.Server) {
+	if server != nil {
+		server.SetReady(true)
+	}
+}
+
 func (p *startupBlockedProvider) Chat(
 	_ context.Context,
 	_ []providers.Message,
@@ -320,6 +326,7 @@ func setupAndStartServices(
 	if err = runningServices.ChannelManager.StartAll(context.Background()); err != nil {
 		return nil, fmt.Errorf("error starting channels: %w", err)
 	}
+	markHealthReady(runningServices.HealthServer)
 
 	fmt.Printf(
 		"✓ Health endpoints available at http://%s:%d/health, /ready and /reload (POST)\n",
@@ -513,6 +520,7 @@ func restartServices(
 	if err = runningServices.ChannelManager.Reload(context.Background(), cfg); err != nil {
 		return fmt.Errorf("error reload channels: %w", err)
 	}
+	markHealthReady(runningServices.HealthServer)
 	fmt.Println("  ✓ Channels restarted.")
 
 	stateManager := state.NewManager(cfg.WorkspacePath())

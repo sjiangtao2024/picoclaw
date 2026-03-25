@@ -31,7 +31,12 @@ func (h *Handler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(cfg); err != nil {
+	payload, err := configPayloadWithSecurityHints(cfg)
+	if err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 	}
 }
@@ -64,6 +69,7 @@ func (h *Handler) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg.SecurityCopyFrom(oldCfg)
+	applyConfigSecurityPatch(&cfg, body)
 
 	if errs := validateConfig(&cfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -161,6 +167,7 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to apply security config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	applyConfigSecurityPatch(&newCfg, patchBody)
 
 	if errs := validateConfig(&newCfg); len(errs) > 0 {
 		w.Header().Set("Content-Type", "application/json")
@@ -179,6 +186,147 @@ func (h *Handler) handlePatchConfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func configPayloadWithSecurityHints(cfg *config.Config) (map[string]any, error) {
+	body, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, err
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+
+	channels := nestedMap(payload, "channels")
+	if feishu := nestedMap(channels, "feishu"); feishu != nil {
+		feishu["app_secret_set"] = cfg.Channels.Feishu.AppSecret() != ""
+		feishu["encrypt_key_set"] = cfg.Channels.Feishu.EncryptKey() != ""
+		feishu["verification_token_set"] = cfg.Channels.Feishu.VerificationToken() != ""
+	}
+	if qq := nestedMap(channels, "qq"); qq != nil {
+		qq["app_secret_set"] = cfg.Channels.QQ.AppSecret() != ""
+	}
+	if dingtalk := nestedMap(channels, "dingtalk"); dingtalk != nil {
+		dingtalk["client_secret_set"] = cfg.Channels.DingTalk.ClientSecret() != ""
+	}
+	if slack := nestedMap(channels, "slack"); slack != nil {
+		slack["bot_token_set"] = cfg.Channels.Slack.BotToken() != ""
+		slack["app_token_set"] = cfg.Channels.Slack.AppToken() != ""
+	}
+	if line := nestedMap(channels, "line"); line != nil {
+		line["channel_secret_set"] = cfg.Channels.LINE.ChannelSecret() != ""
+		line["channel_access_token_set"] = cfg.Channels.LINE.ChannelAccessToken() != ""
+	}
+	if onebot := nestedMap(channels, "onebot"); onebot != nil {
+		onebot["access_token_set"] = cfg.Channels.OneBot.AccessToken() != ""
+	}
+	if wecom := nestedMap(channels, "wecom"); wecom != nil {
+		wecom["secret_set"] = cfg.Channels.WeCom.Secret() != ""
+	}
+	if telegram := nestedMap(channels, "telegram"); telegram != nil {
+		telegram["token_set"] = cfg.Channels.Telegram.Token() != ""
+	}
+	if discord := nestedMap(channels, "discord"); discord != nil {
+		discord["token_set"] = cfg.Channels.Discord.Token() != ""
+	}
+	if matrix := nestedMap(channels, "matrix"); matrix != nil {
+		matrix["access_token_set"] = cfg.Channels.Matrix.AccessToken() != ""
+	}
+	if pico := nestedMap(channels, "pico"); pico != nil {
+		pico["token_set"] = cfg.Channels.Pico.Token() != ""
+	}
+
+	return payload, nil
+}
+
+func nestedMap(parent map[string]any, key string) map[string]any {
+	if parent == nil {
+		return nil
+	}
+	child, ok := parent[key].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return child
+}
+
+func applyConfigSecurityPatch(cfg *config.Config, rawJSON []byte) {
+	var patch map[string]any
+	if err := json.Unmarshal(rawJSON, &patch); err != nil {
+		return
+	}
+	channels, ok := patch["channels"].(map[string]any)
+	if !ok {
+		return
+	}
+	if feishu, ok := channels["feishu"].(map[string]any); ok {
+		if v, ok := feishu["app_secret"].(string); ok {
+			cfg.Channels.Feishu.SetAppSecret(v)
+		}
+		if v, ok := feishu["encrypt_key"].(string); ok {
+			cfg.Channels.Feishu.SetEncryptKey(v)
+		}
+		if v, ok := feishu["verification_token"].(string); ok {
+			cfg.Channels.Feishu.SetVerificationToken(v)
+		}
+	}
+	if qq, ok := channels["qq"].(map[string]any); ok {
+		if v, ok := qq["app_secret"].(string); ok {
+			cfg.Channels.QQ.SetAppSecret(v)
+		}
+	}
+	if dingtalk, ok := channels["dingtalk"].(map[string]any); ok {
+		if v, ok := dingtalk["client_secret"].(string); ok {
+			cfg.Channels.DingTalk.SetClientSecret(v)
+		}
+	}
+	if slack, ok := channels["slack"].(map[string]any); ok {
+		if v, ok := slack["bot_token"].(string); ok {
+			cfg.Channels.Slack.SetBotToken(v)
+		}
+		if v, ok := slack["app_token"].(string); ok {
+			cfg.Channels.Slack.SetAppToken(v)
+		}
+	}
+	if line, ok := channels["line"].(map[string]any); ok {
+		if v, ok := line["channel_secret"].(string); ok {
+			cfg.Channels.LINE.SetChannelSecret(v)
+		}
+		if v, ok := line["channel_access_token"].(string); ok {
+			cfg.Channels.LINE.SetChannelAccessToken(v)
+		}
+	}
+	if onebot, ok := channels["onebot"].(map[string]any); ok {
+		if v, ok := onebot["access_token"].(string); ok {
+			cfg.Channels.OneBot.SetAccessToken(v)
+		}
+	}
+	if wecom, ok := channels["wecom"].(map[string]any); ok {
+		if v, ok := wecom["secret"].(string); ok {
+			cfg.Channels.WeCom.SetSecret(v)
+		}
+	}
+	if telegram, ok := channels["telegram"].(map[string]any); ok {
+		if v, ok := telegram["token"].(string); ok {
+			cfg.Channels.Telegram.SetToken(v)
+		}
+	}
+	if discord, ok := channels["discord"].(map[string]any); ok {
+		if v, ok := discord["token"].(string); ok {
+			cfg.Channels.Discord.SetToken(v)
+		}
+	}
+	if matrix, ok := channels["matrix"].(map[string]any); ok {
+		if v, ok := matrix["access_token"].(string); ok {
+			cfg.Channels.Matrix.SetAccessToken(v)
+		}
+	}
+	if pico, ok := channels["pico"].(map[string]any); ok {
+		if v, ok := pico["token"].(string); ok {
+			cfg.Channels.Pico.SetToken(v)
+		}
+	}
 }
 
 // handleTestCommandPatterns tests a command against whitelist and blacklist patterns.

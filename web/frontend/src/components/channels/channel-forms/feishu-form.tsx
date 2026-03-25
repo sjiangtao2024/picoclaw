@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next"
 
 import type { ChannelConfig } from "@/api/channels"
+import { hasStoredSecret } from "@/components/channels/channel-config-utils"
 import { maskedSecretPlaceholder } from "@/components/secret-placeholder"
 import { Field, KeyInput, SwitchCardField } from "@/components/shared-form"
 import { Input } from "@/components/ui/input"
@@ -33,15 +34,15 @@ export function FeishuForm({
 }: FeishuFormProps) {
   const { t } = useTranslation()
   const appSecretExtraHint =
-    isEdit && asString(config.app_secret)
+    isEdit && hasStoredSecret(config, "app_secret")
       ? ` ${t("channels.field.secretHintSet")}`
       : ""
   const verificationExtraHint =
-    isEdit && asString(config.verification_token)
+    isEdit && hasStoredSecret(config, "verification_token")
       ? ` ${t("channels.field.secretHintSet")}`
       : ""
   const encryptExtraHint =
-    isEdit && asString(config.encrypt_key)
+    isEdit && hasStoredSecret(config, "encrypt_key")
       ? ` ${t("channels.field.secretHintSet")}`
       : ""
 
@@ -71,7 +72,9 @@ export function FeishuForm({
           onChange={(v) => onChange("_app_secret", v)}
           placeholder={maskedSecretPlaceholder(
             config.app_secret,
-            t("channels.field.secretPlaceholder"),
+            hasStoredSecret(config, "app_secret")
+              ? t("channels.field.secretPlaceholder")
+              : "",
           )}
         />
       </Field>
@@ -85,7 +88,9 @@ export function FeishuForm({
           onChange={(v) => onChange("_verification_token", v)}
           placeholder={maskedSecretPlaceholder(
             config.verification_token,
-            t("channels.field.secretPlaceholder"),
+            hasStoredSecret(config, "verification_token")
+              ? t("channels.field.secretPlaceholder")
+              : "",
           )}
         />
       </Field>
@@ -98,7 +103,9 @@ export function FeishuForm({
           onChange={(v) => onChange("_encrypt_key", v)}
           placeholder={maskedSecretPlaceholder(
             config.encrypt_key,
-            t("channels.field.secretPlaceholder"),
+            hasStoredSecret(config, "encrypt_key")
+              ? t("channels.field.secretPlaceholder")
+              : "",
           )}
         />
       </Field>

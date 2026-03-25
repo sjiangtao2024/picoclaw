@@ -4,6 +4,7 @@ import assert from "node:assert/strict"
 import {
   buildEditConfig,
   buildSavePayload,
+  hasStoredSecret,
 } from "./channel-config-utils.ts"
 
 test("buildEditConfig preserves blank edit slots for known secret fields", () => {
@@ -34,4 +35,27 @@ test("buildSavePayload keeps typed app secret for first-time feishu setup", () =
   assert.equal(payload.app_id, "cli_xxx")
   assert.equal(payload.app_secret, "new-secret")
   assert.equal(payload.enabled, true)
+})
+
+test("hasStoredSecret recognizes backend presence hints", () => {
+  assert.equal(hasStoredSecret({ app_secret_set: true }, "app_secret"), true)
+  assert.equal(hasStoredSecret({ app_secret_set: false }, "app_secret"), false)
+})
+
+test("buildSavePayload ignores secret presence hint fields", () => {
+  const channel = {
+    name: "feishu",
+    config_key: "feishu",
+    display_name: "Feishu",
+  }
+  const payload = buildSavePayload(
+    channel,
+    {
+      app_id: "cli_xxx",
+      app_secret_set: true,
+    },
+    true,
+  )
+
+  assert.equal("app_secret_set" in payload, false)
 })

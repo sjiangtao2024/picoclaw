@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next"
 
 import type { ChannelConfig } from "@/api/channels"
+import { hasStoredSecret } from "@/components/channels/channel-config-utils"
 import { maskedSecretPlaceholder } from "@/components/secret-placeholder"
 import { Field, KeyInput, SwitchCardField } from "@/components/shared-form"
 import { Input } from "@/components/ui/input"
@@ -165,7 +166,9 @@ export function GenericForm({
         if (SECRET_FIELDS.has(key)) {
           const editKey = `_${key}`
           const extraHint =
-            isEdit && config[key] ? ` ${t("channels.field.secretHintSet")}` : ""
+            isEdit && hasStoredSecret(config, key)
+              ? ` ${t("channels.field.secretHintSet")}`
+              : ""
           return (
             <Field
               key={key}
@@ -177,7 +180,12 @@ export function GenericForm({
               <KeyInput
                 value={asString(config[editKey])}
                 onChange={(v) => onChange(editKey, v)}
-                placeholder={maskedSecretPlaceholder(config[key])}
+                placeholder={maskedSecretPlaceholder(
+                  config[key],
+                  hasStoredSecret(config, key)
+                    ? t("channels.field.secretPlaceholder")
+                    : "",
+                )}
               />
             </Field>
           )
