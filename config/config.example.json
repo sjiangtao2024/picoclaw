@@ -448,12 +448,21 @@
       "enabled": true,
       "registries": {
         "clawhub": {
-          "enabled": true,
+          "enabled": false,
           "base_url": "https://clawhub.ai",
           "auth_token": "",
           "search_path": "",
           "skills_path": "",
           "download_path": "",
+          "timeout": 0,
+          "max_zip_size": 0,
+          "max_response_size": 0
+        },
+        "skillhub": {
+          "enabled": true,
+          "search_url": "https://lightmake.site/api/v1/search",
+          "primary_download_url_template": "https://lightmake.site/api/v1/download?slug={slug}",
+          "download_url_template": "https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/{slug}.zip",
           "timeout": 0,
           "max_zip_size": 0,
           "max_response_size": 0
