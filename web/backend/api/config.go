@@ -236,6 +236,11 @@ func configPayloadWithSecurityHints(cfg *config.Config) (map[string]any, error) 
 	if pico := nestedMap(channels, "pico"); pico != nil {
 		pico["token_set"] = cfg.Channels.Pico.Token() != ""
 	}
+	tools := nestedMap(payload, "tools")
+	web := nestedMap(tools, "web")
+	if baiduSearch := nestedMap(web, "baidu_search"); baiduSearch != nil {
+		baiduSearch["api_key_set"] = cfg.Tools.Web.BaiduSearch.APIKey() != ""
+	}
 
 	return payload, nil
 }
@@ -256,75 +261,82 @@ func applyConfigSecurityPatch(cfg *config.Config, rawJSON []byte) {
 	if err := json.Unmarshal(rawJSON, &patch); err != nil {
 		return
 	}
-	channels, ok := patch["channels"].(map[string]any)
-	if !ok {
-		return
+	if channels, ok := patch["channels"].(map[string]any); ok {
+		if feishu, ok := channels["feishu"].(map[string]any); ok {
+			if v, ok := feishu["app_secret"].(string); ok {
+				cfg.Channels.Feishu.SetAppSecret(v)
+			}
+			if v, ok := feishu["encrypt_key"].(string); ok {
+				cfg.Channels.Feishu.SetEncryptKey(v)
+			}
+			if v, ok := feishu["verification_token"].(string); ok {
+				cfg.Channels.Feishu.SetVerificationToken(v)
+			}
+		}
+		if qq, ok := channels["qq"].(map[string]any); ok {
+			if v, ok := qq["app_secret"].(string); ok {
+				cfg.Channels.QQ.SetAppSecret(v)
+			}
+		}
+		if dingtalk, ok := channels["dingtalk"].(map[string]any); ok {
+			if v, ok := dingtalk["client_secret"].(string); ok {
+				cfg.Channels.DingTalk.SetClientSecret(v)
+			}
+		}
+		if slack, ok := channels["slack"].(map[string]any); ok {
+			if v, ok := slack["bot_token"].(string); ok {
+				cfg.Channels.Slack.SetBotToken(v)
+			}
+			if v, ok := slack["app_token"].(string); ok {
+				cfg.Channels.Slack.SetAppToken(v)
+			}
+		}
+		if line, ok := channels["line"].(map[string]any); ok {
+			if v, ok := line["channel_secret"].(string); ok {
+				cfg.Channels.LINE.SetChannelSecret(v)
+			}
+			if v, ok := line["channel_access_token"].(string); ok {
+				cfg.Channels.LINE.SetChannelAccessToken(v)
+			}
+		}
+		if onebot, ok := channels["onebot"].(map[string]any); ok {
+			if v, ok := onebot["access_token"].(string); ok {
+				cfg.Channels.OneBot.SetAccessToken(v)
+			}
+		}
+		if wecom, ok := channels["wecom"].(map[string]any); ok {
+			if v, ok := wecom["secret"].(string); ok {
+				cfg.Channels.WeCom.SetSecret(v)
+			}
+		}
+		if telegram, ok := channels["telegram"].(map[string]any); ok {
+			if v, ok := telegram["token"].(string); ok {
+				cfg.Channels.Telegram.SetToken(v)
+			}
+		}
+		if discord, ok := channels["discord"].(map[string]any); ok {
+			if v, ok := discord["token"].(string); ok {
+				cfg.Channels.Discord.SetToken(v)
+			}
+		}
+		if matrix, ok := channels["matrix"].(map[string]any); ok {
+			if v, ok := matrix["access_token"].(string); ok {
+				cfg.Channels.Matrix.SetAccessToken(v)
+			}
+		}
+		if pico, ok := channels["pico"].(map[string]any); ok {
+			if v, ok := pico["token"].(string); ok {
+				cfg.Channels.Pico.SetToken(v)
+			}
+		}
 	}
-	if feishu, ok := channels["feishu"].(map[string]any); ok {
-		if v, ok := feishu["app_secret"].(string); ok {
-			cfg.Channels.Feishu.SetAppSecret(v)
-		}
-		if v, ok := feishu["encrypt_key"].(string); ok {
-			cfg.Channels.Feishu.SetEncryptKey(v)
-		}
-		if v, ok := feishu["verification_token"].(string); ok {
-			cfg.Channels.Feishu.SetVerificationToken(v)
-		}
-	}
-	if qq, ok := channels["qq"].(map[string]any); ok {
-		if v, ok := qq["app_secret"].(string); ok {
-			cfg.Channels.QQ.SetAppSecret(v)
-		}
-	}
-	if dingtalk, ok := channels["dingtalk"].(map[string]any); ok {
-		if v, ok := dingtalk["client_secret"].(string); ok {
-			cfg.Channels.DingTalk.SetClientSecret(v)
-		}
-	}
-	if slack, ok := channels["slack"].(map[string]any); ok {
-		if v, ok := slack["bot_token"].(string); ok {
-			cfg.Channels.Slack.SetBotToken(v)
-		}
-		if v, ok := slack["app_token"].(string); ok {
-			cfg.Channels.Slack.SetAppToken(v)
-		}
-	}
-	if line, ok := channels["line"].(map[string]any); ok {
-		if v, ok := line["channel_secret"].(string); ok {
-			cfg.Channels.LINE.SetChannelSecret(v)
-		}
-		if v, ok := line["channel_access_token"].(string); ok {
-			cfg.Channels.LINE.SetChannelAccessToken(v)
-		}
-	}
-	if onebot, ok := channels["onebot"].(map[string]any); ok {
-		if v, ok := onebot["access_token"].(string); ok {
-			cfg.Channels.OneBot.SetAccessToken(v)
-		}
-	}
-	if wecom, ok := channels["wecom"].(map[string]any); ok {
-		if v, ok := wecom["secret"].(string); ok {
-			cfg.Channels.WeCom.SetSecret(v)
-		}
-	}
-	if telegram, ok := channels["telegram"].(map[string]any); ok {
-		if v, ok := telegram["token"].(string); ok {
-			cfg.Channels.Telegram.SetToken(v)
-		}
-	}
-	if discord, ok := channels["discord"].(map[string]any); ok {
-		if v, ok := discord["token"].(string); ok {
-			cfg.Channels.Discord.SetToken(v)
-		}
-	}
-	if matrix, ok := channels["matrix"].(map[string]any); ok {
-		if v, ok := matrix["access_token"].(string); ok {
-			cfg.Channels.Matrix.SetAccessToken(v)
-		}
-	}
-	if pico, ok := channels["pico"].(map[string]any); ok {
-		if v, ok := pico["token"].(string); ok {
-			cfg.Channels.Pico.SetToken(v)
+	if tools, ok := patch["tools"].(map[string]any); ok {
+		if web, ok := tools["web"].(map[string]any); ok {
+			if baidu, ok := web["baidu_search"].(map[string]any); ok {
+				if v, ok := baidu["api_key"].(string); ok {
+					cfg.Tools.Web.BaiduSearch.SetAPIKey(v)
+				}
+			}
 		}
 	}
 }

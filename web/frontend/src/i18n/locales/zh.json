@@ -8,6 +8,7 @@
     "agent_settings": "Agent 设置",
     "skills": "技能",
     "tools": "工具",
+    "web_search": "网页搜索",
     "services": "服务",
     "channels_group": "频道",
     "show_more_channels": "更多",
@@ -428,6 +429,41 @@
           "requires_skills": "需要先启用 `tools.skills`，该技能注册表工具才能使用。",
           "requires_subagent": "需要先启用 `tools.subagent`，`spawn` 才能委派任务。",
           "requires_mcp_discovery": "需要先启用 `tools.mcp.discovery`，MCP 发现工具才会可用。"
+        }
+      },
+      "web_search": {
+        "load_error": "加载网页搜索设置失败。",
+        "save_success": "网页搜索设置已保存。",
+        "save_error": "保存网页搜索设置失败。",
+        "reset_success": "网页搜索设置已重置。",
+        "baidu": {
+          "title": "百度搜索",
+          "description": "为中国大陆环境配置更稳定的内置搜索链路。API Key 会安全保存，不会在界面中明文显示。"
+        },
+        "fields": {
+          "prefer_native": {
+            "label": "优先使用模型原生搜索",
+            "hint": "开启后，如果当前模型支持内置搜索，可能会隐藏客户端侧的 web_search 工具。"
+          },
+          "duckduckgo_enabled": {
+            "label": "启用 DuckDuckGo 兜底",
+            "hint": "适合实验用途，但在中国大陆环境通常不稳定。"
+          },
+          "baidu_enabled": {
+            "label": "启用百度搜索",
+            "hint": "推荐作为 PicoClaw 内置 web_search 工具的稳定中文搜索入口。"
+          },
+          "max_results": {
+            "label": "最大结果数",
+            "hint": "返回给智能体的百度搜索结果上限。"
+          },
+          "api_key": {
+            "label": "百度千帆搜索 API Key",
+            "hint_set": "当前已存储 API Key。留空则保持不变。",
+            "hint_empty": "填写百度千帆搜索 API Key，以便为当前交付版本启用稳定搜索。",
+            "placeholder_set": "留空保持现有 Key 不变",
+            "placeholder_empty": "请输入百度搜索 API Key"
+          }
         }
       }
     },

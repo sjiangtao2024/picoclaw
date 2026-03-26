@@ -235,6 +235,116 @@ func TestHandleGetConfig_ExposesFeishuSecretPresenceHint(t *testing.T) {
 	}
 }
 
+func TestHandlePatchConfig_PersistsBaiduSearchAPIKeyToSecurityFile(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"tools": {
+			"web": {
+				"prefer_native": false,
+				"duckduckgo": {
+					"enabled": false
+				},
+				"baidu_search": {
+					"enabled": true,
+					"max_results": 8,
+					"api_key": "baidu-search-secret"
+				}
+			}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+	if cfg.Tools.Web.PreferNative {
+		t.Fatal("tools.web.prefer_native should persist as false")
+	}
+	if cfg.Tools.Web.DuckDuckGo.Enabled {
+		t.Fatal("tools.web.duckduckgo.enabled should persist as false")
+	}
+	if !cfg.Tools.Web.BaiduSearch.Enabled {
+		t.Fatal("tools.web.baidu_search.enabled should persist as true")
+	}
+	if got := cfg.Tools.Web.BaiduSearch.MaxResults; got != 8 {
+		t.Fatalf("tools.web.baidu_search.max_results = %d, want 8", got)
+	}
+	if got := cfg.Tools.Web.BaiduSearch.APIKey(); got != "baidu-search-secret" {
+		t.Fatalf("baidu_search api key = %q, want %q", got, "baidu-search-secret")
+	}
+
+	securityRaw, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), ".security.yml"))
+	if err != nil {
+		t.Fatalf("ReadFile(.security.yml) error = %v", err)
+	}
+	if !strings.Contains(string(securityRaw), "baidu_search:") || !strings.Contains(string(securityRaw), "api_key: baidu-search-secret") {
+		t.Fatalf("security file missing baidu_search api key:\n%s", securityRaw)
+	}
+}
+
+func TestHandleGetConfig_ExposesBaiduSearchSecretPresenceHint(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg := config.DefaultConfig()
+	cfg.WithSecurity(&config.SecurityConfig{
+		ModelList: map[string]config.ModelSecurityEntry{},
+		Channels:  &config.ChannelsSecurity{},
+		Web: &config.WebToolsSecurity{
+			BaiduSearch: &config.BaiduSearchSecurity{APIKey: "baidu-search-secret"},
+		},
+	})
+	cfg.Tools.Web.BaiduSearch.Enabled = true
+	cfg.Tools.Web.BaiduSearch.MaxResults = 8
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	tools, ok := body["tools"].(map[string]any)
+	if !ok {
+		t.Fatalf("tools missing from response: %v", body)
+	}
+	web, ok := tools["web"].(map[string]any)
+	if !ok {
+		t.Fatalf("web missing from response: %v", tools)
+	}
+	baidu, ok := web["baidu_search"].(map[string]any)
+	if !ok {
+		t.Fatalf("baidu_search missing from response: %v", web)
+	}
+	if got := baidu["api_key_set"]; got != true {
+		t.Fatalf("baidu_search.api_key_set = %#v, want true", got)
+	}
+}
+
 // setupPicoEnabledEnv creates a test environment with Pico channel enabled and
 // its token stored only in .security.yml (not in the JSON payload).
 func setupPicoEnabledEnv(t *testing.T) (string, func()) {

@@ -8,6 +8,7 @@
     "agent_settings": "Agent Settings",
     "skills": "Skills",
     "tools": "Tools",
+    "web_search": "Web Search",
     "services": "Services",
     "channels_group": "Channels",
     "show_more_channels": "More",
@@ -428,6 +429,41 @@
           "requires_skills": "Enable `tools.skills` before this skill-registry tool can be used.",
           "requires_subagent": "Enable `tools.subagent` before the spawn tool can delegate work.",
           "requires_mcp_discovery": "Enable `tools.mcp.discovery` before MCP discovery tools become available."
+        }
+      },
+      "web_search": {
+        "load_error": "Failed to load Web Search settings",
+        "save_success": "Web Search settings saved.",
+        "save_error": "Failed to save Web Search settings.",
+        "reset_success": "Web Search settings reset.",
+        "baidu": {
+          "title": "Baidu Search",
+          "description": "Configure a stable built-in web search path for mainland China. API keys are stored securely and never shown in plain text."
+        },
+        "fields": {
+          "prefer_native": {
+            "label": "Prefer model native search",
+            "hint": "When enabled, providers that support built-in search may hide the client-side web_search tool."
+          },
+          "duckduckgo_enabled": {
+            "label": "Enable DuckDuckGo fallback",
+            "hint": "Useful for experiments, but usually unreliable in mainland China."
+          },
+          "baidu_enabled": {
+            "label": "Enable Baidu Search",
+            "hint": "Recommended for stable Chinese web search through PicoClaw's built-in web_search tool."
+          },
+          "max_results": {
+            "label": "Max results",
+            "hint": "Maximum number of Baidu search results returned to the agent."
+          },
+          "api_key": {
+            "label": "Baidu Qianfan Search API Key",
+            "hint_set": "A key is already stored. Leave blank to keep it unchanged.",
+            "hint_empty": "Paste a Baidu Qianfan Search API key to enable stable search for this deployment.",
+            "placeholder_set": "Leave blank to keep existing key",
+            "placeholder_empty": "Enter your Baidu Search API key"
+          }
         }
       }
     },
