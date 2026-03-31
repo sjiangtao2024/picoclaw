@@ -14,6 +14,8 @@
 - 上游正式版本以 tag 为准，例如 `v0.2.4`
 - 你们的补丁分支以 `custom/release-<tag>-h618` 命名
 - 示例：`custom/release-v0.2.4-h618`
+- 对外稳定入口保留为 `custom/main`
+- `custom/main` 不再直接承载开发，而是始终指向当前生效的 `custom/release-*` 分支
 
 这样做的好处是：
 
@@ -83,6 +85,13 @@ git push origin custom/main
 ```
 
 不要再在 `custom/main` 上直接叠加临时改动。
+
+旧分支例如 `custom/h618-migration` 应视为历史分支。建议在切换入口后保留一个带日期的归档引用，例如：
+
+```bash
+git branch archive/custom-h618-migration-2026-03-31 custom/h618-migration
+git push origin archive/custom-h618-migration-2026-03-31
+```
 
 ## 后续升级流程
 
