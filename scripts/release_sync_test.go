@@ -75,6 +75,48 @@ func TestSyncUpstreamReleaseCreatesWorktreeFromTag(t *testing.T) {
 	}
 }
 
+func TestDeployH618ReleaseDirUsesStandardArtifacts(t *testing.T) {
+	tmpDir := t.TempDir()
+	repoRoot := filepath.Join(tmpDir, "repo")
+	scriptsDir := filepath.Join(repoRoot, "scripts")
+	releaseDir := filepath.Join(repoRoot, "releases", "h618")
+	logPath := filepath.Join(tmpDir, "upgrade.log")
+
+	mustMkdirAll(t, scriptsDir, 0o755)
+	mustMkdirAll(t, releaseDir, 0o755)
+
+	deployScript, err := os.ReadFile("/home/yukun/dev/picobox-ai/github_repos/picoclaw-v0.2.4-h618/scripts/deploy-h618-release-dir.sh")
+	if err != nil {
+		t.Fatalf("ReadFile(deploy script): %v", err)
+	}
+	mustWriteFile(t, filepath.Join(scriptsDir, "deploy-h618-release-dir.sh"), deployScript, 0o755)
+
+	stub := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + logPath + "\n"
+	mustWriteFile(t, filepath.Join(scriptsDir, "upgrade-h618-web.sh"), []byte(stub), 0o755)
+	mustWriteFile(t, filepath.Join(releaseDir, "picoclaw-web-linux-arm64"), []byte("web"), 0o755)
+	mustWriteFile(t, filepath.Join(releaseDir, "picoclaw"), []byte("gateway"), 0o755)
+
+	cmd := exec.Command("bash", "./scripts/deploy-h618-release-dir.sh")
+	cmd.Dir = repoRoot
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("deploy script failed: %v\n%s", err, out)
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("ReadFile(logPath): %v", err)
+	}
+	got := strings.Split(strings.TrimSpace(string(logData)), "\n")
+	want := []string{
+		filepath.Join(releaseDir, "picoclaw-web-linux-arm64"),
+		filepath.Join(releaseDir, "picoclaw"),
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("upgrade args = %q, want %q", got, want)
+	}
+}
+
 func mustRun(t *testing.T, dir string, name string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(name, args...)

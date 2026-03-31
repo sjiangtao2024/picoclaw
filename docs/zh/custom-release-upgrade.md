@@ -105,6 +105,34 @@ git cherry-pick <仍需保留的补丁>
 git push -u origin custom/release-v0.2.5-h618
 ```
 
+## 61 机器上的固定入口
+
+建议把 61 上的源码目录固定为：
+
+```bash
+/root/dev/picoclaw-release
+```
+
+构建产物固定放在：
+
+```bash
+/root/dev/picoclaw-release/releases/h618
+```
+
+仓库内提供固定部署入口：
+
+```bash
+cd /root/dev/picoclaw-release
+bash ./scripts/deploy-h618-release-dir.sh
+```
+
+这个脚本会默认使用：
+
+- `releases/h618/picoclaw-web-linux-arm64`
+- `releases/h618/picoclaw`
+
+去调用现有的 `upgrade-h618-web.sh`，把二进制替换到 `/root/picoclaw/bin`。
+
 核心原则：
 
 - 升级基线只认上游 release tag
