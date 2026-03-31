@@ -105,33 +105,44 @@ git cherry-pick <仍需保留的补丁>
 git push -u origin custom/release-v0.2.5-h618
 ```
 
-## 61 机器上的固定入口
+## 61 机器上的推荐形态
 
-建议把 61 上的源码目录固定为：
+推荐把 61 视为纯运行机，只保留：
+
+- `/root/picoclaw/bin/picoclaw`
+- `/root/picoclaw/bin/picoclaw-web`
+- `/root/picoclaw/config/config.json`
+- `/root/picoclaw/config/launcher-config.json`
+- `/etc/systemd/system/picoclaw-web.service`
+
+不建议长期保留源码仓库、Node.js、Go 构建链或 Docker 构建环境。
+
+## 61 机器上的固定升级入口
+
+建议在 61 上固定一个二进制发布目录：
 
 ```bash
-/root/dev/picoclaw-release
+/root/releases/picoclaw
 ```
 
-构建产物固定放在：
+把本地构建好的两个文件上传到这里：
+
+- `/root/releases/picoclaw/picoclaw-web-linux-arm64`
+- `/root/releases/picoclaw/picoclaw`
+
+然后在 61 上执行固定命令：
 
 ```bash
-/root/dev/picoclaw-release/releases/h618
+/usr/local/bin/picoclaw-upgrade-binaries
 ```
 
-仓库内提供固定部署入口：
+这个命令默认会从 `/root/releases/picoclaw` 读取二进制，备份旧文件，然后替换 `/root/picoclaw/bin` 下的运行文件并重启 `picoclaw-web.service`。
+
+如果需要显式指定路径，也可以：
 
 ```bash
-cd /root/dev/picoclaw-release
-bash ./scripts/deploy-h618-release-dir.sh
+/usr/local/bin/picoclaw-upgrade-binaries /path/to/picoclaw-web-linux-arm64 /path/to/picoclaw
 ```
-
-这个脚本会默认使用：
-
-- `releases/h618/picoclaw-web-linux-arm64`
-- `releases/h618/picoclaw`
-
-去调用现有的 `upgrade-h618-web.sh`，把二进制替换到 `/root/picoclaw/bin`。
 
 核心原则：
 
