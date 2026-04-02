@@ -152,6 +152,7 @@ export function ChatPage() {
                 <AssistantMessage
                   content={msg.content}
                   timestamp={msg.timestamp}
+                  attachments={msg.attachments}
                 />
               ) : (
                 <UserMessage content={msg.content} />

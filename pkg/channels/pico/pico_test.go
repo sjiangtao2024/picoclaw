@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -141,4 +143,35 @@ func (c *PicoChannel) addConnForTest(pc *picoConn) {
 		c.sessionConnections[pc.sessionID] = bySession
 	}
 	bySession[pc.id] = pc
+}
+
+func TestBuildPicoDataURL(t *testing.T) {
+	dir := t.TempDir()
+	localPath := filepath.Join(dir, "cat.png")
+	if err := os.WriteFile(localPath, []byte("png-bytes"), 0o644); err != nil {
+		t.Fatalf("write media: %v", err)
+	}
+
+	dataURL, err := buildPicoDataURL(localPath, "image/png")
+	if err != nil {
+		t.Fatalf("buildPicoDataURL: %v", err)
+	}
+	want := "data:image/png;base64,cG5nLWJ5dGVz"
+	if dataURL != want {
+		t.Fatalf("dataURL = %q, want %q", dataURL, want)
+	}
+}
+
+func TestInferPicoMediaType(t *testing.T) {
+	tests := map[string]string{
+		"image/png":               "image",
+		"audio/mpeg":              "audio",
+		"video/mp4":               "video",
+		"application/octet-stream": "file",
+	}
+	for contentType, want := range tests {
+		if got := inferPicoMediaType(contentType); got != want {
+			t.Fatalf("inferPicoMediaType(%q) = %q, want %q", contentType, got, want)
+		}
+	}
 }

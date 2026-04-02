@@ -1,9 +1,11 @@
 package pico
 
 import (
+	"encoding/base64"
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"net/http"
 	"strings"
 	"sync"
@@ -246,6 +248,66 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	return c.broadcastToSession(msg.ChatID, outMsg)
 }
 
+// SendMedia implements channels.MediaSender for the Pico WebSocket protocol.
+// The current Pico web UI consumes media via data URLs embedded in media.create.
+func (c *PicoChannel) SendMedia(ctx context.Context, msg bus.OutboundMediaMessage) error {
+	if !c.IsRunning() {
+		return channels.ErrNotRunning
+	}
+
+	store := c.GetMediaStore()
+	if store == nil {
+		return fmt.Errorf("no media store available: %w", channels.ErrSendFailed)
+	}
+
+	for _, part := range msg.Parts {
+		localPath, meta, err := store.ResolveWithMeta(part.Ref)
+		if err != nil {
+			return fmt.Errorf("resolve media ref %q: %w", part.Ref, channels.ErrSendFailed)
+		}
+
+		contentType := part.ContentType
+		if strings.TrimSpace(contentType) == "" {
+			contentType = meta.ContentType
+		}
+		if strings.TrimSpace(contentType) == "" {
+			contentType = "application/octet-stream"
+		}
+
+		filename := part.Filename
+		if strings.TrimSpace(filename) == "" {
+			filename = meta.Filename
+		}
+		if strings.TrimSpace(filename) == "" {
+			filename = "attachment"
+		}
+
+		mediaType := part.Type
+		if strings.TrimSpace(mediaType) == "" {
+			mediaType = inferPicoMediaType(contentType)
+		}
+
+		dataURL, err := buildPicoDataURL(localPath, contentType)
+		if err != nil {
+			return fmt.Errorf("encode media %q: %w", localPath, channels.ErrSendFailed)
+		}
+
+		outMsg := newMessage(TypeMediaCreate, map[string]any{
+			"ref":          part.Ref,
+			"type":         mediaType,
+			"filename":     filename,
+			"content_type": contentType,
+			"caption":      part.Caption,
+			"data_url":     dataURL,
+		})
+		if err := c.broadcastToSession(msg.ChatID, outMsg); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // EditMessage implements channels.MessageEditor.
 func (c *PicoChannel) EditMessage(ctx context.Context, chatID string, messageID string, content string) error {
 	outMsg := newMessage(TypeMessageUpdate, map[string]any{
@@ -253,6 +315,31 @@ func (c *PicoChannel) EditMessage(ctx context.Context, chatID string, messageID 
 		"content":    content,
 	})
 	return c.broadcastToSession(chatID, outMsg)
+}
+
+func buildPicoDataURL(localPath string, contentType string) (string, error) {
+	data, err := os.ReadFile(localPath)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf(
+		"data:%s;base64,%s",
+		contentType,
+		base64.StdEncoding.EncodeToString(data),
+	), nil
+}
+
+func inferPicoMediaType(contentType string) string {
+	switch {
+	case strings.HasPrefix(contentType, "image/"):
+		return "image"
+	case strings.HasPrefix(contentType, "audio/"):
+		return "audio"
+	case strings.HasPrefix(contentType, "video/"):
+		return "video"
+	default:
+		return "file"
+	}
 }
 
 // StartTyping implements channels.TypingCapable.

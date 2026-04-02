@@ -7,15 +7,18 @@ import remarkGfm from "remark-gfm"
 
 import { Button } from "@/components/ui/button"
 import { formatMessageTime } from "@/hooks/use-pico-chat"
+import type { ChatAttachment } from "@/store/chat"
 
 interface AssistantMessageProps {
   content: string
   timestamp?: string | number
+  attachments?: ChatAttachment[]
 }
 
 export function AssistantMessage({
   content,
   timestamp = "",
+  attachments = [],
 }: AssistantMessageProps) {
   const [isCopied, setIsCopied] = useState(false)
   const formattedTimestamp =
@@ -44,6 +47,30 @@ export function AssistantMessage({
 
       <div className="bg-card text-card-foreground relative overflow-hidden rounded-xl border">
         <div className="prose dark:prose-invert prose-p:my-2 prose-pre:my-2 prose-pre:rounded-lg prose-pre:border prose-pre:bg-zinc-950 prose-pre:p-3 max-w-none p-4 text-[15px] leading-relaxed">
+          {attachments.map((attachment, index) =>
+            attachment.type === "image" ? (
+              <div key={`${attachment.dataUrl}-${index}`} className="not-prose mb-3">
+                <img
+                  src={attachment.dataUrl}
+                  alt={attachment.caption || attachment.filename || "attachment"}
+                  className="max-h-[32rem] w-auto rounded-lg border object-contain"
+                />
+              </div>
+            ) : (
+              <div
+                key={`${attachment.dataUrl}-${index}`}
+                className="not-prose mb-3 rounded-lg border px-3 py-2 text-sm"
+              >
+                <a
+                  href={attachment.dataUrl}
+                  download={attachment.filename}
+                  className="text-primary underline"
+                >
+                  {attachment.filename || "下载附件"}
+                </a>
+              </div>
+            ),
+          )}
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeRaw, rehypeSanitize]}
