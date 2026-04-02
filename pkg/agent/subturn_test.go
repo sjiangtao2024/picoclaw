@@ -56,6 +56,20 @@ func (c *eventCollector) hasEventOfKind(kind EventKind) bool {
 	return false
 }
 
+func (c *eventCollector) firstSubTurnSpawnAgentID() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, e := range c.events {
+		if e.Kind != EventKindSubTurnSpawn {
+			continue
+		}
+		if payload, ok := e.Payload.(SubTurnSpawnPayload); ok {
+			return payload.AgentID
+		}
+	}
+	return ""
+}
+
 // ====================== Main Test Function ======================
 func TestSpawnSubTurn(t *testing.T) {
 	tests := []struct {
@@ -250,6 +264,59 @@ func TestSpawnSubTurn_ResultDelivery(t *testing.T) {
 		}
 	default:
 		t.Error("result did not enter pendingResults for async call")
+	}
+}
+
+func TestSpawnSubTurn_TargetAgentIDUsesTargetAgent(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	cfg.Agents.List = []config.AgentConfig{
+		{
+			ID:      "dayahuan",
+			Default: true,
+			Name:    "Dayahuan",
+			Model:   &config.AgentModelConfig{Primary: "dayahuan-model"},
+		},
+		{
+			ID:    "image-agent",
+			Name:  "Image",
+			Model: &config.AgentModelConfig{Primary: "image-model"},
+		},
+	}
+	al = NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+
+	parent := &turnState{
+		ctx:            context.Background(),
+		turnID:         "parent-target-agent",
+		depth:          0,
+		pendingResults: make(chan *tools.ToolResult, 4),
+		concurrencySem: make(chan struct{}, testMaxConcurrentSubTurns),
+		session:        &ephemeralSessionStore{},
+		agent: func() *AgentInstance {
+			agent, ok := al.registry.GetAgent("dayahuan")
+			if !ok {
+				t.Fatal("expected dayahuan agent")
+			}
+			return agent
+		}(),
+	}
+
+	collector, collectCleanup := newEventCollector(t, al)
+	defer collectCleanup()
+
+	_, err := spawnSubTurn(context.Background(), al, parent, SubTurnConfig{
+		Model:         "image-model",
+		TargetAgentID: "image-agent",
+		Tools:         []tools.Tool{},
+	})
+	if err != nil {
+		t.Fatalf("spawnSubTurn() error = %v", err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+	if got := collector.firstSubTurnSpawnAgentID(); got != "image-agent" {
+		t.Fatalf("spawned subturn agent = %q, want image-agent", got)
 	}
 }
 

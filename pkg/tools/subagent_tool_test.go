@@ -219,6 +219,45 @@ func TestSubagentTool_Execute_NoLabel(t *testing.T) {
 	}
 }
 
+func TestSubagentTool_ParametersIncludeAgentID(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	tool := NewSubagentTool(manager)
+
+	props, ok := tool.Parameters()["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("properties should be a map")
+	}
+	agentID, ok := props["agent_id"].(map[string]any)
+	if !ok {
+		t.Fatal("agent_id parameter should exist")
+	}
+	if agentID["type"] != "string" {
+		t.Fatalf("agent_id type = %v, want string", agentID["type"])
+	}
+}
+
+func TestSubagentTool_Execute_RejectsDisallowedAgent(t *testing.T) {
+	provider := &MockLLMProvider{}
+	manager := NewSubagentManager(provider, "test-model", "/tmp/test")
+	tool := NewSubagentTool(manager)
+	tool.SetAllowlistChecker(func(targetAgentID string) bool {
+		return targetAgentID == "image-agent"
+	})
+
+	result := tool.Execute(context.Background(), map[string]any{
+		"task":     "generate image",
+		"agent_id": "stock-agent",
+	})
+
+	if !result.IsError {
+		t.Fatal("expected disallowed agent to return error")
+	}
+	if !strings.Contains(result.ForLLM, "not allowed to spawn agent 'stock-agent'") {
+		t.Fatalf("unexpected error message: %s", result.ForLLM)
+	}
+}
+
 // TestSubagentTool_Execute_MissingTask tests error handling for missing task
 func TestSubagentTool_Execute_MissingTask(t *testing.T) {
 	provider := &MockLLMProvider{}

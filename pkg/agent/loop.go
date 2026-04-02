@@ -252,6 +252,18 @@ func registerSharedTools(
 			agent.Tools.Register(sendFileTool)
 		}
 
+		if cfg.Tools.IsToolEnabled("modelscope-image") {
+			imageTool := tools.NewModelScopeImageTool(tools.ModelScopeImageToolOptions{
+				Enabled:        cfg.Tools.Images.ModelScope.Enabled,
+				BaseURL:        cfg.Tools.Images.ModelScope.BaseURL,
+				TimeoutSeconds: cfg.Tools.Images.ModelScope.TimeoutSeconds,
+				DefaultSize:    cfg.Tools.Images.ModelScope.DefaultSize,
+			})
+			if imageTool != nil {
+				agent.Tools.Register(imageTool)
+			}
+		}
+
 		// Skill discovery and installation tools
 		skills_enabled := cfg.Tools.IsToolEnabled("skills")
 		find_skills_enable := cfg.Tools.IsToolEnabled("find_skills")
@@ -373,7 +385,8 @@ func registerSharedTools(
 			// spawn_status which are added below — preventing recursive
 			// subagent spawning.
 			subagentManager.SetTools(agent.Tools.Clone())
-			if spawnEnabled {
+			syncOnlySubagents := agent.Subagents != nil && agent.Subagents.SyncOnly
+			if spawnEnabled && !syncOnlySubagents {
 				spawnTool := tools.NewSpawnTool(subagentManager)
 				spawnTool.SetSpawner(NewSubTurnSpawner(al))
 				currentAgentID := agentID
@@ -382,13 +395,18 @@ func registerSharedTools(
 				})
 
 				agent.Tools.Register(spawnTool)
-
-				// Also register the synchronous subagent tool
-				subagentTool := tools.NewSubagentTool(subagentManager)
-				subagentTool.SetSpawner(NewSubTurnSpawner(al))
-				agent.Tools.Register(subagentTool)
 			}
-			if spawnStatusEnabled {
+
+			// Always register synchronous subagent when subagents are enabled.
+			subagentTool := tools.NewSubagentTool(subagentManager)
+			subagentTool.SetSpawner(NewSubTurnSpawner(al))
+			currentAgentID := agentID
+			subagentTool.SetAllowlistChecker(func(targetAgentID string) bool {
+				return registry.CanSpawnSubagent(currentAgentID, targetAgentID)
+			})
+			agent.Tools.Register(subagentTool)
+
+			if spawnStatusEnabled && !syncOnlySubagents {
 				agent.Tools.Register(tools.NewSpawnStatusTool(subagentManager))
 			}
 		} else if (spawnEnabled || spawnStatusEnabled) && !cfg.Tools.IsToolEnabled("subagent") {
@@ -3222,7 +3240,7 @@ func (al *AgentLoop) handleCommand(
 	agent *AgentInstance,
 	opts *processOptions,
 ) (string, bool) {
-	if !commands.HasCommandPrefix(msg.Content) {
+	if _, ok := commands.CommandName(msg.Content); !ok {
 		return "", false
 	}
 

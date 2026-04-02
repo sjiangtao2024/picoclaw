@@ -123,12 +123,13 @@ Task: %s`,
 		// Launch async sub-turn in goroutine
 		go func() {
 			result, err := t.spawner.SpawnSubTurn(ctx, SubTurnConfig{
-				Model:        t.defaultModel,
-				Tools:        nil, // Will inherit from parent via context
-				SystemPrompt: systemPrompt,
-				MaxTokens:    t.maxTokens,
-				Temperature:  t.temperature,
-				Async:        true, // Async execution
+				Model:         t.defaultModel,
+				TargetAgentID: agentID,
+				Tools:         nil, // Will inherit from parent via context
+				SystemPrompt:  systemPrompt,
+				MaxTokens:     t.maxTokens,
+				Temperature:   t.temperature,
+				Async:         true, // Async execution
 			})
 			if err != nil {
 				result = ErrorResult(fmt.Sprintf("Spawn failed: %v", err)).WithError(err)

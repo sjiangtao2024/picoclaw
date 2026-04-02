@@ -101,10 +101,11 @@ type subTurnRuntimeConfig struct {
 //	// Result also available in parent's pendingResults channel
 //	// Parent turn will poll and process it in a later iteration
 type SubTurnConfig struct {
-	Model        string
-	Tools        []tools.Tool
-	SystemPrompt string
-	MaxTokens    int
+	Model         string
+	TargetAgentID string
+	Tools         []tools.Tool
+	SystemPrompt  string
+	MaxTokens     int
 
 	// Async controls the result delivery mechanism:
 	//
@@ -220,6 +221,7 @@ func (s *AgentLoopSpawner) SpawnSubTurn(
 	// Convert tools.SubTurnConfig to agent.SubTurnConfig
 	agentCfg := SubTurnConfig{
 		Model:              cfg.Model,
+		TargetAgentID:      cfg.TargetAgentID,
 		Tools:              cfg.Tools,
 		SystemPrompt:       cfg.SystemPrompt,
 		ActualSystemPrompt: cfg.ActualSystemPrompt,
@@ -335,6 +337,11 @@ func spawnSubTurn(
 	// Wrap it in a shallow copy that uses an ephemeral (in-memory only) session store
 	// so that child turns never pollute or persist to the parent's session history.
 	baseAgent := parentTS.agent
+	if cfg.TargetAgentID != "" {
+		if targetAgent, ok := al.registry.GetAgent(cfg.TargetAgentID); ok {
+			baseAgent = targetAgent
+		}
+	}
 	if baseAgent == nil {
 		baseAgent = al.registry.GetDefaultAgent()
 	}

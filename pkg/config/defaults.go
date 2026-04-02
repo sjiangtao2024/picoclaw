@@ -368,6 +368,14 @@ func DefaultConfig() *Config {
 				MaxAge:   30,
 				Interval: 5,
 			},
+			Images: ImagesToolsConfig{
+				ModelScope: ModelScopeImageConfig{
+					Enabled:        false,
+					BaseURL:        "http://127.0.0.1:8010",
+					TimeoutSeconds: 300,
+					DefaultSize:    "1024x1024",
+				},
+			},
 			Web: WebToolsConfig{
 				ToolConfig: ToolConfig{
 					Enabled: true,

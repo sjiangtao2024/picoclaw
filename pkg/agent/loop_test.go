@@ -114,6 +114,88 @@ func newTestAgentLoop(
 	return al, cfg, msgBus, provider, func() { os.RemoveAll(tmpDir) }
 }
 
+func TestNewAgentLoopRegistersModelScopeImageToolWhenEnabled(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	cfg.Tools.Images.ModelScope.Enabled = true
+	cfg.Tools.Images.ModelScope.BaseURL = "http://127.0.0.1:8010"
+	cfg.Tools.Images.ModelScope.TimeoutSeconds = 300
+	cfg.Tools.Images.ModelScope.DefaultSize = "1024x1024"
+
+	al = NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	agent := al.GetRegistry().GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	tool, ok := agent.Tools.Get("modelscope-image")
+	if !ok {
+		t.Fatal("expected modelscope-image tool to be registered")
+	}
+	if tool.Name() != "modelscope-image" {
+		t.Fatalf("tool name = %q, want modelscope-image", tool.Name())
+	}
+}
+
+func TestNewAgentLoopDoesNotRegisterModelScopeImageToolWhenDisabled(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	cfg.Tools.Images.ModelScope.Enabled = false
+	cfg.Tools.Images.ModelScope.BaseURL = "http://127.0.0.1:8010"
+
+	al = NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	agent := al.GetRegistry().GetDefaultAgent()
+	if agent == nil {
+		t.Fatal("expected default agent")
+	}
+
+	if _, ok := agent.Tools.Get("modelscope-image"); ok {
+		t.Fatal("expected modelscope-image tool to stay unregistered")
+	}
+}
+
+func TestNewAgentLoopSyncOnlySubagentDisablesSpawnTools(t *testing.T) {
+	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+	defer cleanup()
+
+	cfg.Agents.List = []config.AgentConfig{
+		{
+			ID:        "dayahuan",
+			Default:   true,
+			Workspace: cfg.Agents.Defaults.Workspace,
+			Subagents: &config.SubagentsConfig{
+				AllowAgents: []string{"image-agent"},
+				SyncOnly:    true,
+			},
+		},
+		{
+			ID:        "image-agent",
+			Workspace: cfg.Agents.Defaults.Workspace,
+		},
+	}
+	cfg.Tools.Subagent.Enabled = true
+	cfg.Tools.Spawn.Enabled = true
+	cfg.Tools.SpawnStatus.Enabled = true
+
+	al = NewAgentLoop(cfg, bus.NewMessageBus(), &mockProvider{})
+	agent, ok := al.GetRegistry().GetAgent("dayahuan")
+	if !ok {
+		t.Fatal("expected dayahuan agent")
+	}
+
+	if _, ok := agent.Tools.Get("subagent"); !ok {
+		t.Fatal("expected subagent tool to be registered")
+	}
+	if _, ok := agent.Tools.Get("spawn"); ok {
+		t.Fatal("expected spawn tool to stay unregistered in sync-only mode")
+	}
+	if _, ok := agent.Tools.Get("spawn_status"); ok {
+		t.Fatal("expected spawn_status tool to stay unregistered in sync-only mode")
+	}
+}
+
 func TestProcessMessage_IncludesCurrentSenderInDynamicContext(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "agent-test-*")
 	if err != nil {
@@ -254,6 +336,44 @@ func TestHandleCommand_UseCommandRejectsUnknownSkill(t *testing.T) {
 	}
 	if !strings.Contains(reply, "Unknown skill: missing") {
 		t.Fatalf("reply = %q, want unknown skill error", reply)
+	}
+}
+
+func TestHandleCommand_NaturalLanguageClearPhraseHandled(t *testing.T) {
+	tmpDir := t.TempDir()
+	cfg := &config.Config{
+		Agents: config.AgentsConfig{
+			Defaults: config.AgentDefaults{
+				Workspace:         tmpDir,
+				ModelName:         "test-model",
+				MaxTokens:         4096,
+				MaxToolIterations: 10,
+			},
+		},
+	}
+	msgBus := bus.NewMessageBus()
+	provider := &recordingProvider{}
+	al := NewAgentLoop(cfg, msgBus, provider)
+	agent := al.GetRegistry().GetDefaultAgent()
+
+	sessionKey := "agent:main:feishu:direct:test-user"
+	agent.Sessions.AddMessage(sessionKey, "user", "old message")
+
+	opts := processOptions{SessionKey: sessionKey}
+	reply, handled := al.handleCommand(context.Background(), bus.InboundMessage{
+		Channel:  "feishu",
+		SenderID: "feishu:test-user",
+		ChatID:   "chat-1",
+		Content:  "新建对话",
+	}, agent, &opts)
+	if !handled {
+		t.Fatal("expected natural-language clear phrase to be handled")
+	}
+	if !strings.Contains(reply, "cleared") {
+		t.Fatalf("reply = %q, want clear confirmation", reply)
+	}
+	if got := agent.Sessions.GetHistory(sessionKey); len(got) != 0 {
+		t.Fatalf("history len = %d, want 0", len(got))
 	}
 }
 

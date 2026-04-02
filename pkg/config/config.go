@@ -251,6 +251,7 @@ type AgentConfig struct {
 type SubagentsConfig struct {
 	AllowAgents []string          `json:"allow_agents,omitempty"`
 	Model       *AgentModelConfig `json:"model,omitempty"`
+	SyncOnly    bool              `json:"sync_only,omitempty"`
 }
 
 type PeerMatch struct {
@@ -1118,6 +1119,17 @@ type MediaCleanupConfig struct {
 	Interval   int `                                    env:"PICOCLAW_MEDIA_CLEANUP_INTERVAL" json:"interval_minutes"`
 }
 
+type ModelScopeImageConfig struct {
+	Enabled        bool   `json:"enabled"         env:"PICOCLAW_TOOLS_IMAGES_MODELSCOPE_ENABLED"`
+	BaseURL        string `json:"base_url"        env:"PICOCLAW_TOOLS_IMAGES_MODELSCOPE_BASE_URL"`
+	TimeoutSeconds int    `json:"timeout_seconds" env:"PICOCLAW_TOOLS_IMAGES_MODELSCOPE_TIMEOUT_SECONDS"`
+	DefaultSize    string `json:"default_size"    env:"PICOCLAW_TOOLS_IMAGES_MODELSCOPE_DEFAULT_SIZE"`
+}
+
+type ImagesToolsConfig struct {
+	ModelScope ModelScopeImageConfig `json:"modelscope"`
+}
+
 type ReadFileToolConfig struct {
 	Enabled         bool `json:"enabled"`
 	MaxReadFileSize int  `json:"max_read_file_size"`
@@ -1139,6 +1151,7 @@ type ToolsConfig struct {
 	Exec            ExecConfig         `json:"exec"`
 	Skills          SkillsToolsConfig  `json:"skills"`
 	MediaCleanup    MediaCleanupConfig `json:"media_cleanup"`
+	Images          ImagesToolsConfig  `json:"images"`
 	MCP             MCPConfig          `json:"mcp"`
 	AppendFile      ToolConfig         `json:"append_file"                                              envPrefix:"PICOCLAW_TOOLS_APPEND_FILE_"`
 	EditFile        ToolConfig         `json:"edit_file"                                                envPrefix:"PICOCLAW_TOOLS_EDIT_FILE_"`
@@ -2140,6 +2153,8 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 		return t.Skills.Enabled
 	case "media_cleanup":
 		return t.MediaCleanup.Enabled
+	case "modelscope-image":
+		return t.Images.ModelScope.Enabled
 	case "append_file":
 		return t.AppendFile.Enabled
 	case "edit_file":
