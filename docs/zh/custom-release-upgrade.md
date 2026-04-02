@@ -16,12 +16,29 @@
 - 示例：`custom/release-v0.2.4-h618`
 - 对外稳定入口保留为 `custom/main`
 - `custom/main` 不再直接承载开发，而是始终指向当前生效的 `custom/release-*` 分支
+- `custom/release-*` 表示“已回放最小补丁栈并通过盒子 smoke 的可运行状态”，不是纯上游镜像
 
 这样做的好处是：
 
 - 每次升级都有清晰基线
 - 本地补丁范围可控
 - 下次升级时只需要重新评估补丁是否仍然必要
+
+## 目录约定
+
+运行机上的以下目录默认原地保留，不随主程序升级覆盖：
+
+- `/root/picoclaw/config`
+- `/root/picoclaw/workspace`
+- `/root/picoclaw/workspace-dayahuan`
+- `/root/picoclaw/workspace-image-agent`
+- `/root/picoclaw-plugins`
+
+升级时只替换：
+
+- `/root/picoclaw/bin/picoclaw`
+- `/root/picoclaw/bin/picoclaw-web`
+- 必要的前端静态资源
 
 ## 创建新的升级 worktree
 
@@ -58,15 +75,21 @@ cd ../picoclaw-v0.2.4-h618
 git cherry-pick <commit1> <commit2> ...
 ```
 
-建议按类别回放：
+推荐最小补丁栈：
 
-1. H618 部署和布局
-2. H618 二进制打包
-3. SkillHub 相关
-4. Web Search 设置页
-5. 需要重新审核的 secret/gateway ready 补丁
+1. `modelscope-image tool`
+2. `subagent` 稳定性补丁
+3. `pico media output`
+4. `linux nocgo web/launcher`
 
 如果某个补丁的功能已经被上游等效实现，不要强行保留，直接废弃即可。
+
+建议在本地把补丁分成两类：
+
+- 平台补丁：`subagent`、`pico media`、`linux nocgo`
+- 业务补丁：`modelscope-image`
+
+补丁目录本身建议继续保留在你们自己的运维仓中，由发布流程按顺序重放。fork 仓库负责保存“当前 release 分支的已验证代码状态”。
 
 ## 推送到你们自己的远端
 
@@ -75,6 +98,14 @@ git cherry-pick <commit1> <commit2> ...
 ```bash
 git push -u origin custom/release-v0.2.4-h618
 ```
+
+推荐把这一步视为正式发布前的固定动作：
+
+1. 新 worktree 上完成补丁重放
+2. 本地完成构建和 smoke
+3. 将结果提交到 `custom/release-*`
+4. 推送到 fork
+5. 再从该分支产出部署二进制
 
 如果你们还保留一个统一入口分支，比如 `custom/main`，建议只做快进：
 
@@ -104,6 +135,15 @@ cd ../picoclaw-v0.2.5-h618
 git cherry-pick <仍需保留的补丁>
 git push -u origin custom/release-v0.2.5-h618
 ```
+
+推荐固定流程：
+
+1. `git fetch upstream --tags`
+2. 创建 `custom/release-vX.Y.Z-h618`
+3. 重放最小补丁栈
+4. 本地构建 `picoclaw` 与 `picoclaw-web`
+5. 先投测试盒子做 smoke
+6. 通过后推送 fork 并更新 `custom/main`
 
 ## 61 机器上的推荐形态
 
@@ -150,3 +190,4 @@ git push -u origin custom/release-v0.2.5-h618
 - 自定义功能只保留在 `custom/release-*` 分支
 - 每次升级重新判断补丁是否仍然必要
 - 不再依赖单纯的 `git pull` 判断是否“同步上游”
+- fork 仓库保存“已验证代码状态”，补丁目录保存“可重放变更集合”
