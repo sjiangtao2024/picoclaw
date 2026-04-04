@@ -406,8 +406,8 @@ Skills 工具配置通过 ClawHub 等注册表进行技能发现和安装。
 | `registries.clawhub.max_zip_size`  | int    | 0                    | 技能 zip 最大大小（字节），0 = 默认  |
 | `registries.clawhub.max_response_size` | int | 0                   | API 响应最大大小（字节），0 = 默认   |
 | `registries.skillhub.enabled`      | bool   | true                 | 启用腾讯 SkillHub 注册表             |
-| `registries.skillhub.search_url`   | string | `https://skillhub.tencent.com/api/v1/search` | SkillHub 搜索 API 地址      |
-| `registries.skillhub.primary_download_url_template` | string | `https://skillhub.tencent.com/api/v1/download?slug={slug}` | SkillHub 主下载地址模板 |
+| `registries.skillhub.search_url`   | string | `https://api.skillhub.tencent.com/api/v1/search` | SkillHub 搜索 API 地址      |
+| `registries.skillhub.primary_download_url_template` | string | `https://api.skillhub.tencent.com/api/v1/download?slug={slug}` | SkillHub 主下载地址模板 |
 | `registries.skillhub.download_url_template` | string | `https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/{slug}.zip` | SkillHub 镜像下载地址模板 |
 | `registries.skillhub.use_proxy`    | bool   | env/default          | 覆盖 SkillHub 请求是否走代理         |
 | `registries.skillhub.proxy`        | string | `""`                 | SkillHub 显式 HTTP/HTTPS/SOCKS5 代理 |
@@ -444,8 +444,8 @@ Skills 工具配置通过 ClawHub 等注册表进行技能发现和安装。
         },
         "skillhub": {
           "enabled": true,
-          "search_url": "https://skillhub.tencent.com/api/v1/search",
-          "primary_download_url_template": "https://skillhub.tencent.com/api/v1/download?slug={slug}",
+          "search_url": "https://api.skillhub.tencent.com/api/v1/search",
+          "primary_download_url_template": "https://api.skillhub.tencent.com/api/v1/download?slug={slug}",
           "download_url_template": "https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/{slug}.zip"
         }
       },

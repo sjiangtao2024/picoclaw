@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	defaultSkillHubSearchURL                  = "https://skillhub.tencent.com/api/v1/search"
-	defaultSkillHubPrimaryDownloadURLTemplate = "https://skillhub.tencent.com/api/v1/download?slug={slug}"
+	defaultSkillHubSearchURL                  = "https://api.skillhub.tencent.com/api/v1/search"
+	defaultSkillHubPrimaryDownloadURLTemplate = "https://api.skillhub.tencent.com/api/v1/download?slug={slug}"
 	defaultSkillHubDownloadURLTemplate        = "https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/{slug}.zip"
 )
 

@@ -475,8 +475,8 @@ The skills tool configures skill discovery and installation via registries like 
 | `registries.clawhub.max_zip_size`  | int    | 0                    | Max skill zip size in bytes (0 = default)    |
 | `registries.clawhub.max_response_size` | int | 0                   | Max API response size in bytes (0 = default) |
 | `registries.skillhub.enabled`      | bool   | true                 | Enable Tencent SkillHub registry             |
-| `registries.skillhub.search_url`   | string | `https://skillhub.tencent.com/api/v1/search` | SkillHub search API URL         |
-| `registries.skillhub.primary_download_url_template` | string | `https://skillhub.tencent.com/api/v1/download?slug={slug}` | Primary SkillHub download URL template |
+| `registries.skillhub.search_url`   | string | `https://api.skillhub.tencent.com/api/v1/search` | SkillHub search API URL         |
+| `registries.skillhub.primary_download_url_template` | string | `https://api.skillhub.tencent.com/api/v1/download?slug={slug}` | Primary SkillHub download URL template |
 | `registries.skillhub.download_url_template` | string | `https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/{slug}.zip` | Mirror SkillHub download URL template |
 | `registries.skillhub.use_proxy`    | bool   | env/default          | Override proxy usage for SkillHub requests   |
 | `registries.skillhub.proxy`        | string | `""`                 | Explicit HTTP/HTTPS/SOCKS5 proxy for SkillHub |
@@ -513,8 +513,8 @@ The skills tool configures skill discovery and installation via registries like 
         },
         "skillhub": {
           "enabled": true,
-          "search_url": "https://skillhub.tencent.com/api/v1/search",
-          "primary_download_url_template": "https://skillhub.tencent.com/api/v1/download?slug={slug}",
+          "search_url": "https://api.skillhub.tencent.com/api/v1/search",
+          "primary_download_url_template": "https://api.skillhub.tencent.com/api/v1/download?slug={slug}",
           "download_url_template": "https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/{slug}.zip"
         }
       },
