@@ -405,6 +405,31 @@ func TestHandlePatchConfig_AllowsInvalidDenyRegexPatternsWhenDenyPatternsDisable
 	}
 }
 
+func TestHandlePatchConfig_RejectsZeroGatewayPort(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
+		"gateway": {
+			"port": 0
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("gateway.port")) {
+		t.Fatalf("expected validation error mentioning gateway.port, body=%s", rec.Body.String())
+	}
+}
+
 // testCommandPatterns is a helper that sets up a handler and sends a test-command-patterns request.
 func testCommandPatterns(t *testing.T, configPath string, body string) *httptest.ResponseRecorder {
 	t.Helper()

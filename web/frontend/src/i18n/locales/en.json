@@ -47,6 +47,7 @@
     "noHistory": "No chat history yet",
     "historyLoadFailed": "Failed to load chat history",
     "historyOpenFailed": "Failed to open this chat history",
+    "connectionFailed": "Chat connection is unavailable. Refresh the page and try again.",
     "loadingMore": "Loading more...",
     "deleteSession": "Delete session",
     "messagesCount": "{{count}} messages",

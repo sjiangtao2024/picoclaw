@@ -1,0 +1,52 @@
+diff --git a/web/backend/api/config.go b/web/backend/api/config.go
+index 5490b4e1..cf6f08b5 100644
+--- a/web/backend/api/config.go
++++ b/web/backend/api/config.go
+@@ -275,8 +275,9 @@ func validateConfig(cfg *config.Config) []string {
+ 		errs = append(errs, err.Error())
+ 	}
+ 
+-	// Gateway port range
+-	if cfg.Gateway.Port != 0 && (cfg.Gateway.Port < 1 || cfg.Gateway.Port > 65535) {
++	// Gateway startup requires an explicit valid port; allowing 0 here lets
++	// the launcher save a config that the gateway immediately rejects.
++	if cfg.Gateway.Port < 1 || cfg.Gateway.Port > 65535 {
+ 		errs = append(errs, fmt.Sprintf("gateway.port %d is out of valid range (1-65535)", cfg.Gateway.Port))
+ 	}
+ 
+diff --git a/web/backend/api/config_test.go b/web/backend/api/config_test.go
+index a90145f3..a1048581 100644
+--- a/web/backend/api/config_test.go
++++ b/web/backend/api/config_test.go
+@@ -405,6 +405,31 @@ func TestHandlePatchConfig_AllowsInvalidDenyRegexPatternsWhenDenyPatternsDisable
+ 	}
+ }
+ 
++func TestHandlePatchConfig_RejectsZeroGatewayPort(t *testing.T) {
++	configPath, cleanup := setupOAuthTestEnv(t)
++	defer cleanup()
++
++	h := NewHandler(configPath)
++	mux := http.NewServeMux()
++	h.RegisterRoutes(mux)
++
++	req := httptest.NewRequest(http.MethodPatch, "/api/config", bytes.NewBufferString(`{
++		"gateway": {
++			"port": 0
++		}
++	}`))
++	req.Header.Set("Content-Type", "application/json")
++
++	rec := httptest.NewRecorder()
++	mux.ServeHTTP(rec, req)
++	if rec.Code != http.StatusBadRequest {
++		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusBadRequest, rec.Body.String())
++	}
++	if !bytes.Contains(rec.Body.Bytes(), []byte("gateway.port")) {
++		t.Fatalf("expected validation error mentioning gateway.port, body=%s", rec.Body.String())
++	}
++}
++
+ // testCommandPatterns is a helper that sets up a handler and sends a test-command-patterns request.
+ func testCommandPatterns(t *testing.T, configPath string, body string) *httptest.ResponseRecorder {
+ 	t.Helper()

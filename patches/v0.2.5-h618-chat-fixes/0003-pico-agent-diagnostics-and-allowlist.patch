@@ -1,0 +1,512 @@
+diff --git a/pkg/agent/loop.go b/pkg/agent/loop.go
+index 6a706825..be9ab093 100644
+--- a/pkg/agent/loop.go
++++ b/pkg/agent/loop.go
+@@ -478,6 +478,16 @@ func (al *AgentLoop) Run(ctx context.Context) error {
+ 				return nil
+ 			}
+ 
++			logger.WarnCF("agent", "AgentLoop dequeued inbound bus message", map[string]any{
++				"channel":     msg.Channel,
++				"chat_id":     msg.ChatID,
++				"sender_id":   msg.SenderID,
++				"message_id":  msg.MessageID,
++				"session_key": msg.SessionKey,
++				"content_len": len(msg.Content),
++				"media_count": len(msg.Media),
++			})
++
+ 			// Start a goroutine that drains the bus while processMessage is
+ 			// running. Only messages that resolve to the active turn scope are
+ 			// redirected into steering; other inbound messages are requeued.
+@@ -519,6 +529,16 @@ func (al *AgentLoop) Run(ctx context.Context) error {
+ 				defer cancelDrain()
+ 
+ 				response, err := al.processMessage(ctx, msg)
++				logger.WarnCF("agent", "AgentLoop processMessage returned", map[string]any{
++					"channel":          msg.Channel,
++					"chat_id":          msg.ChatID,
++					"sender_id":        msg.SenderID,
++					"message_id":       msg.MessageID,
++					"session_key":      msg.SessionKey,
++					"response_len":     len(response),
++					"process_err":      err != nil,
++					"process_err_text": errString(err),
++				})
+ 				if err != nil {
+ 					response = fmt.Sprintf("Error processing message: %v", err)
+ 				}
+@@ -1351,6 +1371,16 @@ func (al *AgentLoop) ProcessHeartbeat(
+ }
+ 
+ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
++	logger.WarnCF("agent", "AgentLoop entered processMessage", map[string]any{
++		"channel":     msg.Channel,
++		"chat_id":     msg.ChatID,
++		"sender_id":   msg.SenderID,
++		"message_id":  msg.MessageID,
++		"session_key": msg.SessionKey,
++		"content_len": len(msg.Content),
++		"media_count": len(msg.Media),
++	})
++
+ 	// Add message preview to log (show full content for error messages)
+ 	var logContent string
+ 	if strings.Contains(msg.Content, "Error:") || strings.Contains(msg.Content, "error") {
+@@ -1385,6 +1415,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
+ 
+ 	route, agent, routeErr := al.resolveMessageRoute(msg)
+ 	if routeErr != nil {
++		logger.WarnCF("agent", "AgentLoop failed to resolve message route", map[string]any{
++			"channel":        msg.Channel,
++			"chat_id":        msg.ChatID,
++			"sender_id":      msg.SenderID,
++			"message_id":     msg.MessageID,
++			"session_key":    msg.SessionKey,
++			"route_err":      routeErr.Error(),
++		})
+ 		return "", routeErr
+ 	}
+ 
+@@ -1423,6 +1461,17 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
+ 		EnableSummary:     true,
+ 		SendResponse:      false,
+ 	}
++	logger.WarnCF("agent", "AgentLoop resolved message route", map[string]any{
++		"channel":       msg.Channel,
++		"chat_id":       msg.ChatID,
++		"sender_id":     msg.SenderID,
++		"message_id":    msg.MessageID,
++		"session_key":   sessionKey,
++		"route_agent":   route.AgentID,
++		"route_channel": route.Channel,
++		"matched_by":    route.MatchedBy,
++		"agent_id":      agent.ID,
++	})
+ 
+ 	// context-dependent commands check their own Runtime fields and report
+ 	// "unavailable" when the required capability is nil.
+@@ -1442,6 +1491,13 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
+ 	return al.runAgentLoop(ctx, agent, opts)
+ }
+ 
++func errString(err error) string {
++	if err == nil {
++		return ""
++	}
++	return err.Error()
++}
++
+ func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {
+ 	registry := al.GetRegistry()
+ 	route := registry.ResolveRoute(routing.RouteInput{
+diff --git a/pkg/channels/base.go b/pkg/channels/base.go
+index bd4ced84..e4bc47e5 100644
+--- a/pkg/channels/base.go
++++ b/pkg/channels/base.go
+@@ -103,6 +103,8 @@ func NewBaseChannel(
+ 	allowList []string,
+ 	opts ...BaseChannelOption,
+ ) *BaseChannel {
++	allowList = sanitizeAllowList(allowList)
++
+ 	bc := &BaseChannel{
+ 		config:    config,
+ 		bus:       bus,
+@@ -127,6 +129,25 @@ func NewBaseChannel(
+ 	return bc
+ }
+ 
++func sanitizeAllowList(allowList []string) []string {
++	if len(allowList) == 0 {
++		return nil
++	}
++
++	sanitized := make([]string, 0, len(allowList))
++	for _, allowed := range allowList {
++		trimmed := strings.TrimSpace(allowed)
++		if trimmed == "" {
++			continue
++		}
++		sanitized = append(sanitized, trimmed)
++	}
++	if len(sanitized) == 0 {
++		return nil
++	}
++	return sanitized
++}
++
+ // MaxMessageLength returns the maximum message length (in runes) for this channel.
+ // A value of 0 means no limit.
+ func (c *BaseChannel) MaxMessageLength() int {
+@@ -252,6 +273,18 @@ func (c *BaseChannel) HandleMessage(
+ 	metadata map[string]string,
+ 	senderOpts ...bus.SenderInfo,
+ ) {
++	logger.WarnCF("channels", "BaseChannel received inbound message", map[string]any{
++		"channel":      c.name,
++		"chat_id":      chatID,
++		"message_id":   messageID,
++		"sender_id":    senderID,
++		"content_len":  len(content),
++		"media_count":  len(media),
++		"has_metadata": len(metadata) > 0,
++		"peer_kind":    peer.Kind,
++		"peer_id":      peer.ID,
++	})
++
+ 	// Use SenderInfo-based allow check when available, else fall back to string
+ 	var sender bus.SenderInfo
+ 	if len(senderOpts) > 0 {
+@@ -259,10 +292,25 @@ func (c *BaseChannel) HandleMessage(
+ 	}
+ 	if sender.CanonicalID != "" || sender.PlatformID != "" {
+ 		if !c.IsAllowedSender(sender) {
++			logger.WarnCF("channels", "BaseChannel rejected inbound message by structured sender allowlist", map[string]any{
++				"channel":       c.name,
++				"chat_id":       chatID,
++				"sender_id":     senderID,
++				"canonical_id":  sender.CanonicalID,
++				"platform_id":   sender.PlatformID,
++				"platform":      sender.Platform,
++				"display_name":  sender.DisplayName,
++				"username":      sender.Username,
++			})
+ 			return
+ 		}
+ 	} else {
+ 		if !c.IsAllowed(senderID) {
++			logger.WarnCF("channels", "BaseChannel rejected inbound message by allowlist", map[string]any{
++				"channel":   c.name,
++				"chat_id":   chatID,
++				"sender_id": senderID,
++			})
+ 			return
+ 		}
+ 	}
+@@ -288,6 +336,19 @@ func (c *BaseChannel) HandleMessage(
+ 		Metadata:   metadata,
+ 	}
+ 
++	logger.WarnCF("channels", "BaseChannel prepared inbound bus message", map[string]any{
++		"channel":      msg.Channel,
++		"chat_id":      msg.ChatID,
++		"sender_id":    msg.SenderID,
++		"message_id":   msg.MessageID,
++		"session_key":  msg.SessionKey,
++		"media_scope":  msg.MediaScope,
++		"content_len":  len(msg.Content),
++		"media_count":  len(msg.Media),
++		"peer_kind":    msg.Peer.Kind,
++		"peer_id":      msg.Peer.ID,
++	})
++
+ 	// Auto-trigger typing indicator, message reaction, and placeholder before publishing.
+ 	// Each capability is independent — all three may fire for the same message.
+ 	// Note: even when streaming is available, we still show typing + placeholder on inbound.
+@@ -326,6 +387,14 @@ func (c *BaseChannel) HandleMessage(
+ 			"chat_id": chatID,
+ 			"error":   err.Error(),
+ 		})
++	} else {
++		logger.WarnCF("channels", "BaseChannel published inbound bus message", map[string]any{
++			"channel":     msg.Channel,
++			"chat_id":     msg.ChatID,
++			"sender_id":   msg.SenderID,
++			"message_id":  msg.MessageID,
++			"session_key": msg.SessionKey,
++		})
+ 	}
+ }
+ 
+diff --git a/pkg/channels/base_test.go b/pkg/channels/base_test.go
+index 6132b8bf..87083b8c 100644
+--- a/pkg/channels/base_test.go
++++ b/pkg/channels/base_test.go
+@@ -20,6 +20,12 @@ func TestBaseChannelIsAllowed(t *testing.T) {
+ 			senderID:  "anyone",
+ 			want:      true,
+ 		},
++		{
++			name:      "blank allowlist entries are treated as empty allowlist",
++			allowList: []string{""},
++			senderID:  "anyone",
++			want:      true,
++		},
+ 		{
+ 			name:      "compound sender matches numeric allowlist",
+ 			allowList: []string{"123456"},
+@@ -190,6 +196,12 @@ func TestIsAllowedSender(t *testing.T) {
+ 			sender:    bus.SenderInfo{PlatformID: "anyone"},
+ 			want:      true,
+ 		},
++		{
++			name:      "blank allowlist entries are treated as empty allowlist",
++			allowList: []string{""},
++			sender:    bus.SenderInfo{Platform: "pico", PlatformID: "pico-user", CanonicalID: "pico:pico-user"},
++			want:      true,
++		},
+ 		{
+ 			name:      "numeric ID matches PlatformID",
+ 			allowList: []string{"123456"},
+diff --git a/pkg/channels/pico/pico.go b/pkg/channels/pico/pico.go
+index e22da1ba..5a9ef41b 100644
+--- a/pkg/channels/pico/pico.go
++++ b/pkg/channels/pico/pico.go
+@@ -478,15 +478,34 @@ func (c *PicoChannel) readLoop(pc *picoConn) {
+ 			return
+ 		}
+ 
++		logger.WarnCF("pico", "Received Pico WebSocket frame", map[string]any{
++			"conn_id":    pc.id,
++			"session_id": pc.sessionID,
++			"bytes":      len(rawMsg),
++		})
++
+ 		_ = pc.conn.SetReadDeadline(time.Now().Add(readTimeout))
+ 
+ 		var msg PicoMessage
+ 		if err := json.Unmarshal(rawMsg, &msg); err != nil {
++			logger.WarnCF("pico", "Failed to parse Pico WebSocket frame", map[string]any{
++				"conn_id":    pc.id,
++				"session_id": pc.sessionID,
++				"error":      err.Error(),
++				"raw":        truncate(string(rawMsg), 200),
++			})
+ 			errMsg := newError("invalid_message", "failed to parse message")
+ 			pc.writeJSON(errMsg)
+ 			continue
+ 		}
+ 
++		logger.WarnCF("pico", "Parsed Pico WebSocket message", map[string]any{
++			"conn_id":    pc.id,
++			"session_id": pc.sessionID,
++			"type":       msg.Type,
++			"id":         msg.ID,
++		})
++
+ 		c.handleMessage(pc, msg)
+ 	}
+ }
+@@ -539,6 +558,12 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
+ 	content, _ := msg.Payload["content"].(string)
+ 	media, err := parseInlineImageMedia(msg.Payload)
+ 	if err != nil {
++		logger.WarnCF("pico", "Rejected Pico message due to invalid media", map[string]any{
++			"conn_id":    pc.id,
++			"session_id": pc.sessionID,
++			"id":         msg.ID,
++			"error":      err.Error(),
++		})
+ 		errMsg := newErrorWithPayload("invalid_media", err.Error(), map[string]any{
+ 			"request_id": msg.ID,
+ 		})
+@@ -547,6 +572,11 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
+ 	}
+ 
+ 	if strings.TrimSpace(content) == "" && len(media) == 0 {
++		logger.WarnCF("pico", "Rejected Pico message due to empty content", map[string]any{
++			"conn_id":    pc.id,
++			"session_id": pc.sessionID,
++			"id":         msg.ID,
++		})
+ 		errMsg := newErrorWithPayload("empty_content", "message content is empty", map[string]any{
+ 			"request_id": msg.ID,
+ 		})
+@@ -570,7 +600,9 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
+ 		"conn_id":    pc.id,
+ 	}
+ 
+-	logger.DebugCF("pico", "Received message", map[string]any{
++	logger.WarnCF("pico", "Dispatching Pico message", map[string]any{
++		"conn_id":    pc.id,
++		"id":         msg.ID,
+ 		"session_id": sessionID,
+ 		"preview":    truncate(content, 50),
+ 		"media":      len(media),
+diff --git a/web/backend/api/pico.go b/web/backend/api/pico.go
+index c8ef4730..ae12c6bb 100644
+--- a/web/backend/api/pico.go
++++ b/web/backend/api/pico.go
+@@ -58,10 +58,18 @@ func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
+ 		gateway.mu.Lock()
+ 		ensurePicoTokenCachedLocked(h.configPath)
+ 		gatewayAvailable := gateway.pidData != nil
++		gatewayPID := 0
++		if gateway.pidData != nil {
++			gatewayPID = gateway.pidData.PID
++		}
++		picoTokenSummary := summarizePicoTokenForLog(gateway.picoToken)
+ 		gateway.mu.Unlock()
+ 
+ 		if !gatewayAvailable {
+-			logger.Warnf("Gateway not available for WebSocket proxy")
++			fields := picoRequestLogFields(r)
++			fields["gateway_pid"] = gatewayPID
++			fields["cached_pico_token"] = picoTokenSummary
++			logger.WarnCF("api", "Gateway not available for WebSocket proxy", fields)
+ 			http.Error(w, "Gateway not available", http.StatusServiceUnavailable)
+ 			return
+ 		}
+@@ -70,12 +78,21 @@ func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
+ 			origProtocol := prot[0]
+ 			newToken := picoComposedToken(prot[0])
+ 			if newToken != "" {
++				fields := picoRequestLogFields(r)
++				fields["gateway_pid"] = gatewayPID
++				fields["cached_pico_token"] = picoTokenSummary
++				fields["protocols"] = summarizePicoProtocolsForLog(prot)
++				logger.WarnCF("api", "Accepted Pico WebSocket proxy request", fields)
+ 				h.createWsProxy(origProtocol, newToken).ServeHTTP(w, r)
+ 				return
+ 			}
+ 		}
+ 
+-		logger.Warnf("Invalid Pico token: %v", prot)
++		fields := picoRequestLogFields(r)
++		fields["gateway_pid"] = gatewayPID
++		fields["cached_pico_token"] = picoTokenSummary
++		fields["protocols"] = summarizePicoProtocolsForLog(prot)
++		logger.WarnCF("api", "Invalid Pico token", fields)
+ 		http.Error(w, "Invalid Pico token", http.StatusForbidden)
+ 	}
+ }
+@@ -91,10 +108,16 @@ func (h *Handler) handleGetPicoToken(w http.ResponseWriter, r *http.Request) {
+ 	}
+ 
+ 	wsURL := h.buildWsURL(r)
++	token := cfg.Channels.Pico.Token.String()
++	fields := picoRequestLogFields(r)
++	fields["enabled"] = cfg.Channels.Pico.Enabled
++	fields["token"] = summarizePicoTokenForLog(token)
++	fields["ws_url"] = wsURL
++	logger.WarnCF("api", "Serving Pico token", fields)
+ 
+ 	w.Header().Set("Content-Type", "application/json")
+ 	json.NewEncoder(w).Encode(map[string]any{
+-		"token":   cfg.Channels.Pico.Token.String(),
++		"token":   token,
+ 		"ws_url":  wsURL,
+ 		"enabled": cfg.Channels.Pico.Enabled,
+ 	})
+diff --git a/web/backend/api/pico_diag.go b/web/backend/api/pico_diag.go
+new file mode 100644
+index 00000000..da579022
+--- /dev/null
++++ b/web/backend/api/pico_diag.go
+@@ -0,0 +1,56 @@
++package api
++
++import (
++	"fmt"
++	"net/http"
++	"strings"
++
++	"github.com/sipeed/picoclaw/web/backend/middleware"
++)
++
++func summarizePicoTokenForLog(token string) string {
++	token = strings.TrimSpace(token)
++	if token == "" {
++		return "empty"
++	}
++	if len(token) <= 6 {
++		return fmt.Sprintf("len=%d", len(token))
++	}
++	return fmt.Sprintf("len=%d suffix=%s", len(token), token[len(token)-4:])
++}
++
++func summarizePicoProtocolsForLog(values []string) []string {
++	if len(values) == 0 {
++		return nil
++	}
++
++	out := make([]string, 0, len(values))
++	for _, value := range values {
++		trimmed := strings.TrimSpace(value)
++		if trimmed == "" {
++			out = append(out, "empty")
++			continue
++		}
++		if after, ok := strings.CutPrefix(trimmed, tokenPrefix); ok {
++			out = append(out, "token.("+summarizePicoTokenForLog(after)+")")
++			continue
++		}
++		out = append(out, fmt.Sprintf("raw(len=%d)", len(trimmed)))
++	}
++	return out
++}
++
++func picoRequestLogFields(r *http.Request) map[string]any {
++	fields := map[string]any{
++		"host":        r.Host,
++		"origin":      r.Header.Get("Origin"),
++		"remote_addr": r.RemoteAddr,
++	}
++	if ua := strings.TrimSpace(r.UserAgent()); ua != "" {
++		fields["user_agent"] = ua
++	}
++	if _, err := r.Cookie(middleware.LauncherDashboardCookieName); err == nil {
++		fields["dashboard_cookie"] = true
++	}
++	return fields
++}
+diff --git a/web/backend/api/pico_diag_test.go b/web/backend/api/pico_diag_test.go
+new file mode 100644
+index 00000000..8a90a4cf
+--- /dev/null
++++ b/web/backend/api/pico_diag_test.go
+@@ -0,0 +1,53 @@
++package api
++
++import (
++	"net/http"
++	"net/http/httptest"
++	"reflect"
++	"testing"
++
++	"github.com/sipeed/picoclaw/web/backend/middleware"
++)
++
++func TestSummarizePicoTokenForLog(t *testing.T) {
++	if got := summarizePicoTokenForLog(""); got != "empty" {
++		t.Fatalf("empty token summary = %q", got)
++	}
++	if got := summarizePicoTokenForLog("abcdef"); got != "len=6" {
++		t.Fatalf("short token summary = %q", got)
++	}
++	if got := summarizePicoTokenForLog("0de1188561a0540077e4bc685b496110"); got != "len=32 suffix=6110" {
++		t.Fatalf("long token summary = %q", got)
++	}
++}
++
++func TestSummarizePicoProtocolsForLog(t *testing.T) {
++	got := summarizePicoProtocolsForLog([]string{"token.", "token.abcdef", "chat"})
++	want := []string{"token.(empty)", "token.(len=6)", "raw(len=4)"}
++	if !reflect.DeepEqual(got, want) {
++		t.Fatalf("protocol summary = %#v, want %#v", got, want)
++	}
++}
++
++func TestPicoRequestLogFields(t *testing.T) {
++	req := httptest.NewRequest("GET", "http://launcher.local/pico/ws", nil)
++	req.Host = "192.168.1.63:18800"
++	req.RemoteAddr = "192.168.1.44:53082"
++	req.Header.Set("Origin", "http://192.168.1.63:18800")
++	req.Header.Set("User-Agent", "Mozilla/5.0")
++	req.AddCookie(&http.Cookie{
++		Name:  middleware.LauncherDashboardCookieName,
++		Value: "session",
++	})
++
++	fields := picoRequestLogFields(req)
++	if fields["host"] != "192.168.1.63:18800" {
++		t.Fatalf("host = %#v", fields["host"])
++	}
++	if fields["origin"] != "http://192.168.1.63:18800" {
++		t.Fatalf("origin = %#v", fields["origin"])
++	}
++	if fields["dashboard_cookie"] != true {
++		t.Fatalf("dashboard_cookie = %#v", fields["dashboard_cookie"])
++	}
++}

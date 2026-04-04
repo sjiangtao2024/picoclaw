@@ -1,21 +1,12 @@
 import { atom, getDefaultStore } from "jotai"
 
 import { type GatewayStatusResponse, getGatewayStatus } from "@/api/gateway"
-
-export type GatewayState =
-  | "running"
-  | "starting"
-  | "restarting"
-  | "stopping"
-  | "stopped"
-  | "error"
-  | "unknown"
-
-export interface GatewayStoreState {
-  status: GatewayState
-  canStart: boolean
-  restartRequired: boolean
-}
+import { getGatewayPollIntervalMs } from "./gateway-polling"
+import {
+  applyGatewayStatusPatch,
+  type GatewayState,
+  type GatewayStoreState,
+} from "./gateway-store-state"
 
 type GatewayStorePatch = Partial<GatewayStoreState>
 
@@ -23,10 +14,9 @@ const DEFAULT_GATEWAY_STATE: GatewayStoreState = {
   status: "unknown",
   canStart: true,
   restartRequired: false,
+  pid: undefined,
 }
 
-const GATEWAY_POLL_INTERVAL_MS = 2000
-const GATEWAY_TRANSIENT_POLL_INTERVAL_MS = 1000
 const GATEWAY_STOPPING_TIMEOUT_MS = 5000
 
 interface RefreshGatewayStateOptions {
@@ -108,36 +98,19 @@ export function applyGatewayStatusToStore(
   data: Partial<
     Pick<
       GatewayStatusResponse,
-      "gateway_status" | "gateway_start_allowed" | "gateway_restart_required"
+      | "gateway_status"
+      | "gateway_start_allowed"
+      | "gateway_restart_required"
+      | "pid"
     >
   >,
 ) {
-  updateGatewayStore((prev) => ({
-    status:
-      prev.status === "stopping" && data.gateway_status === "running"
-        ? "stopping"
-        : (data.gateway_status ?? prev.status),
-    canStart:
-      prev.status === "stopping" && data.gateway_status === "running"
-        ? false
-        : (data.gateway_start_allowed ?? prev.canStart),
-    restartRequired:
-      prev.status === "stopping" && data.gateway_status === "running"
-        ? false
-        : (data.gateway_restart_required ?? prev.restartRequired),
-  }))
+  updateGatewayStore((prev) => applyGatewayStatusPatch(prev, data))
 }
 
 function nextGatewayPollInterval() {
   const status = getDefaultStore().get(gatewayAtom).status
-  if (
-    status === "starting" ||
-    status === "restarting" ||
-    status === "stopping"
-  ) {
-    return GATEWAY_TRANSIENT_POLL_INTERVAL_MS
-  }
-  return GATEWAY_POLL_INTERVAL_MS
+  return getGatewayPollIntervalMs(status)
 }
 
 function scheduleGatewayPoll(delay = nextGatewayPollInterval()) {

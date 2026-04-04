@@ -21,6 +21,12 @@ func TestBaseChannelIsAllowed(t *testing.T) {
 			want:      true,
 		},
 		{
+			name:      "blank allowlist entries are treated as empty allowlist",
+			allowList: []string{""},
+			senderID:  "anyone",
+			want:      true,
+		},
+		{
 			name:      "compound sender matches numeric allowlist",
 			allowList: []string{"123456"},
 			senderID:  "123456|alice",
@@ -188,6 +194,12 @@ func TestIsAllowedSender(t *testing.T) {
 			name:      "empty allowlist allows all",
 			allowList: nil,
 			sender:    bus.SenderInfo{PlatformID: "anyone"},
+			want:      true,
+		},
+		{
+			name:      "blank allowlist entries are treated as empty allowlist",
+			allowList: []string{""},
+			sender:    bus.SenderInfo{Platform: "pico", PlatformID: "pico-user", CanonicalID: "pico:pico-user"},
 			want:      true,
 		},
 		{

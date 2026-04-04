@@ -58,10 +58,18 @@ func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
 		gateway.mu.Lock()
 		ensurePicoTokenCachedLocked(h.configPath)
 		gatewayAvailable := gateway.pidData != nil
+		gatewayPID := 0
+		if gateway.pidData != nil {
+			gatewayPID = gateway.pidData.PID
+		}
+		picoTokenSummary := summarizePicoTokenForLog(gateway.picoToken)
 		gateway.mu.Unlock()
 
 		if !gatewayAvailable {
-			logger.Warnf("Gateway not available for WebSocket proxy")
+			fields := picoRequestLogFields(r)
+			fields["gateway_pid"] = gatewayPID
+			fields["cached_pico_token"] = picoTokenSummary
+			logger.WarnCF("api", "Gateway not available for WebSocket proxy", fields)
 			http.Error(w, "Gateway not available", http.StatusServiceUnavailable)
 			return
 		}
@@ -70,12 +78,21 @@ func (h *Handler) handleWebSocketProxy() http.HandlerFunc {
 			origProtocol := prot[0]
 			newToken := picoComposedToken(prot[0])
 			if newToken != "" {
+				fields := picoRequestLogFields(r)
+				fields["gateway_pid"] = gatewayPID
+				fields["cached_pico_token"] = picoTokenSummary
+				fields["protocols"] = summarizePicoProtocolsForLog(prot)
+				logger.WarnCF("api", "Accepted Pico WebSocket proxy request", fields)
 				h.createWsProxy(origProtocol, newToken).ServeHTTP(w, r)
 				return
 			}
 		}
 
-		logger.Warnf("Invalid Pico token: %v", prot)
+		fields := picoRequestLogFields(r)
+		fields["gateway_pid"] = gatewayPID
+		fields["cached_pico_token"] = picoTokenSummary
+		fields["protocols"] = summarizePicoProtocolsForLog(prot)
+		logger.WarnCF("api", "Invalid Pico token", fields)
 		http.Error(w, "Invalid Pico token", http.StatusForbidden)
 	}
 }
@@ -91,10 +108,16 @@ func (h *Handler) handleGetPicoToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	wsURL := h.buildWsURL(r)
+	token := cfg.Channels.Pico.Token.String()
+	fields := picoRequestLogFields(r)
+	fields["enabled"] = cfg.Channels.Pico.Enabled
+	fields["token"] = summarizePicoTokenForLog(token)
+	fields["ws_url"] = wsURL
+	logger.WarnCF("api", "Serving Pico token", fields)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"token":   cfg.Channels.Pico.Token.String(),
+		"token":   token,
 		"ws_url":  wsURL,
 		"enabled": cfg.Channels.Pico.Enabled,
 	})

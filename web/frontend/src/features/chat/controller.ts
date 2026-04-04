@@ -17,6 +17,11 @@ import {
   isCurrentSocket,
   normalizeWsUrlForBrowser,
 } from "@/features/chat/websocket"
+import { shouldReconnectForGatewayUpdate } from "@/features/chat/gateway-reconnect"
+import {
+  verifySocketHealth,
+  waitForSocketOpen,
+} from "@/features/chat/socket-connection"
 import i18n from "@/i18n"
 import {
   type ChatAttachment,
@@ -333,15 +338,47 @@ interface SendChatMessageInput {
   attachments?: ChatAttachment[]
 }
 
-export function sendChatMessage({
+async function ensureChatSocketReady(): Promise<WebSocket | null> {
+  let socket = wsRef
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    shouldMaintainConnection = true
+    await connectChat()
+    socket = wsRef
+  }
+
+  if (!socket) {
+    return null
+  }
+
+  if (socket.readyState === WebSocket.OPEN) {
+    if (await verifySocketHealth(socket)) {
+      return socket
+    }
+
+    disconnectChatInternal({ clearDesiredConnection: false })
+    shouldMaintainConnection = true
+    await connectChat()
+    socket = wsRef
+    if (!socket) {
+      return null
+    }
+    if (socket.readyState === WebSocket.OPEN) {
+      return (await verifySocketHealth(socket)) ? socket : null
+    }
+  }
+
+  const opened = await waitForSocketOpen(socket)
+  if (!opened || socket.readyState !== WebSocket.OPEN) {
+    return null
+  }
+
+  return (await verifySocketHealth(socket)) ? socket : null
+}
+
+export async function sendChatMessage({
   content,
   attachments = [],
 }: SendChatMessageInput) {
-  if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
-    console.warn("WebSocket not connected")
-    return false
-  }
-
   const normalizedContent = content.trim()
   const normalizedAttachments = attachments
     .filter((attachment) => attachment.type === "image" && attachment.url)
@@ -351,7 +388,14 @@ export function sendChatMessage({
     return false
   }
 
-  const socket = wsRef
+  const socket = await ensureChatSocketReady()
+  if (!socket) {
+    console.warn("WebSocket not connected")
+    updateChatStore({ connectionState: "error", isTyping: false })
+    toast.error(i18n.t("chat.connectionFailed"))
+    return false
+  }
+
   const id = `msg-${++msgIdCounter}-${Date.now()}`
 
   updateChatStore((prev) => ({
@@ -443,25 +487,44 @@ export function initializeChatStore() {
 
   initialized = true
   activeSessionIdRef = getChatState().activeSessionId
-  let lastGatewayStatus: GatewayState | null = null
+  let lastGatewaySnapshot: { status: GatewayState; pid?: number } | null = null
 
   const syncConnectionWithGateway = (force: boolean = false) => {
-    const gatewayStatus = store.get(gatewayAtom).status
-    if (!force && gatewayStatus === lastGatewayStatus) {
+    const gatewayState = store.get(gatewayAtom)
+    const gatewaySnapshot = {
+      status: gatewayState.status,
+      pid: gatewayState.pid,
+    }
+    const reconnectForProcessChange = shouldReconnectForGatewayUpdate(
+      lastGatewaySnapshot,
+      gatewaySnapshot,
+    )
+
+    if (
+      !force &&
+      gatewaySnapshot.status === lastGatewaySnapshot?.status &&
+      !reconnectForProcessChange
+    ) {
       return
     }
-    lastGatewayStatus = gatewayStatus
+    lastGatewaySnapshot = gatewaySnapshot
 
-    if (gatewayStatus === "running") {
+    if (gatewaySnapshot.status === "running") {
       shouldMaintainConnection = true
       if (needsActiveSessionHydration()) {
         return
+      }
+      if (reconnectForProcessChange) {
+        disconnectChatInternal({ clearDesiredConnection: false })
       }
       void connectChat()
       return
     }
 
-    if (gatewayStatus === "stopped" || gatewayStatus === "error") {
+    if (
+      gatewaySnapshot.status === "stopped" ||
+      gatewaySnapshot.status === "error"
+    ) {
       disconnectChatInternal({ clearDesiredConnection: true })
     }
   }

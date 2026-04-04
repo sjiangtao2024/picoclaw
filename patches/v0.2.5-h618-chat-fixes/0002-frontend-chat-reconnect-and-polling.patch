@@ -1,0 +1,697 @@
+diff --git a/web/frontend/src/components/chat/chat-page.tsx b/web/frontend/src/components/chat/chat-page.tsx
+index 38a0fc6b..cb1870cc 100644
+--- a/web/frontend/src/components/chat/chat-page.tsx
++++ b/web/frontend/src/components/chat/chat-page.tsx
+@@ -109,10 +109,10 @@ export function ChatPage() {
+     }
+   }, [messages, isTyping, isAtBottom])
+ 
+-  const handleSend = () => {
++  const handleSend = async () => {
+     if ((!input.trim() && attachments.length === 0) || !canSend) return
+     if (
+-      sendMessage({
++      await sendMessage({
+         content: input,
+         attachments,
+       })
+diff --git a/web/frontend/src/features/chat/controller.ts b/web/frontend/src/features/chat/controller.ts
+index cef8b303..1ed4228d 100644
+--- a/web/frontend/src/features/chat/controller.ts
++++ b/web/frontend/src/features/chat/controller.ts
+@@ -17,6 +17,11 @@ import {
+   isCurrentSocket,
+   normalizeWsUrlForBrowser,
+ } from "@/features/chat/websocket"
++import { shouldReconnectForGatewayUpdate } from "@/features/chat/gateway-reconnect"
++import {
++  verifySocketHealth,
++  waitForSocketOpen,
++} from "@/features/chat/socket-connection"
+ import i18n from "@/i18n"
+ import {
+   type ChatAttachment,
+@@ -333,15 +338,47 @@ interface SendChatMessageInput {
+   attachments?: ChatAttachment[]
+ }
+ 
+-export function sendChatMessage({
++async function ensureChatSocketReady(): Promise<WebSocket | null> {
++  let socket = wsRef
++  if (!socket || socket.readyState !== WebSocket.OPEN) {
++    shouldMaintainConnection = true
++    await connectChat()
++    socket = wsRef
++  }
++
++  if (!socket) {
++    return null
++  }
++
++  if (socket.readyState === WebSocket.OPEN) {
++    if (await verifySocketHealth(socket)) {
++      return socket
++    }
++
++    disconnectChatInternal({ clearDesiredConnection: false })
++    shouldMaintainConnection = true
++    await connectChat()
++    socket = wsRef
++    if (!socket) {
++      return null
++    }
++    if (socket.readyState === WebSocket.OPEN) {
++      return (await verifySocketHealth(socket)) ? socket : null
++    }
++  }
++
++  const opened = await waitForSocketOpen(socket)
++  if (!opened || socket.readyState !== WebSocket.OPEN) {
++    return null
++  }
++
++  return (await verifySocketHealth(socket)) ? socket : null
++}
++
++export async function sendChatMessage({
+   content,
+   attachments = [],
+ }: SendChatMessageInput) {
+-  if (!wsRef || wsRef.readyState !== WebSocket.OPEN) {
+-    console.warn("WebSocket not connected")
+-    return false
+-  }
+-
+   const normalizedContent = content.trim()
+   const normalizedAttachments = attachments
+     .filter((attachment) => attachment.type === "image" && attachment.url)
+@@ -351,7 +388,14 @@ export function sendChatMessage({
+     return false
+   }
+ 
+-  const socket = wsRef
++  const socket = await ensureChatSocketReady()
++  if (!socket) {
++    console.warn("WebSocket not connected")
++    updateChatStore({ connectionState: "error", isTyping: false })
++    toast.error(i18n.t("chat.connectionFailed"))
++    return false
++  }
++
+   const id = `msg-${++msgIdCounter}-${Date.now()}`
+ 
+   updateChatStore((prev) => ({
+@@ -443,25 +487,44 @@ export function initializeChatStore() {
+ 
+   initialized = true
+   activeSessionIdRef = getChatState().activeSessionId
+-  let lastGatewayStatus: GatewayState | null = null
++  let lastGatewaySnapshot: { status: GatewayState; pid?: number } | null = null
+ 
+   const syncConnectionWithGateway = (force: boolean = false) => {
+-    const gatewayStatus = store.get(gatewayAtom).status
+-    if (!force && gatewayStatus === lastGatewayStatus) {
++    const gatewayState = store.get(gatewayAtom)
++    const gatewaySnapshot = {
++      status: gatewayState.status,
++      pid: gatewayState.pid,
++    }
++    const reconnectForProcessChange = shouldReconnectForGatewayUpdate(
++      lastGatewaySnapshot,
++      gatewaySnapshot,
++    )
++
++    if (
++      !force &&
++      gatewaySnapshot.status === lastGatewaySnapshot?.status &&
++      !reconnectForProcessChange
++    ) {
+       return
+     }
+-    lastGatewayStatus = gatewayStatus
++    lastGatewaySnapshot = gatewaySnapshot
+ 
+-    if (gatewayStatus === "running") {
++    if (gatewaySnapshot.status === "running") {
+       shouldMaintainConnection = true
+       if (needsActiveSessionHydration()) {
+         return
+       }
++      if (reconnectForProcessChange) {
++        disconnectChatInternal({ clearDesiredConnection: false })
++      }
+       void connectChat()
+       return
+     }
+ 
+-    if (gatewayStatus === "stopped" || gatewayStatus === "error") {
++    if (
++      gatewaySnapshot.status === "stopped" ||
++      gatewaySnapshot.status === "error"
++    ) {
+       disconnectChatInternal({ clearDesiredConnection: true })
+     }
+   }
+diff --git a/web/frontend/src/i18n/locales/en.json b/web/frontend/src/i18n/locales/en.json
+index 5b854a98..4931d6df 100644
+--- a/web/frontend/src/i18n/locales/en.json
++++ b/web/frontend/src/i18n/locales/en.json
+@@ -47,6 +47,7 @@
+     "noHistory": "No chat history yet",
+     "historyLoadFailed": "Failed to load chat history",
+     "historyOpenFailed": "Failed to open this chat history",
++    "connectionFailed": "Chat connection is unavailable. Refresh the page and try again.",
+     "loadingMore": "Loading more...",
+     "deleteSession": "Delete session",
+     "messagesCount": "{{count}} messages",
+diff --git a/web/frontend/src/i18n/locales/zh.json b/web/frontend/src/i18n/locales/zh.json
+index ed6adf4c..edaf824b 100644
+--- a/web/frontend/src/i18n/locales/zh.json
++++ b/web/frontend/src/i18n/locales/zh.json
+@@ -47,6 +47,7 @@
+     "noHistory": "暂无对话历史",
+     "historyLoadFailed": "加载历史记录失败",
+     "historyOpenFailed": "打开该历史会话失败",
++    "connectionFailed": "聊天连接未建立，请刷新页面后重试。",
+     "loadingMore": "加载更多...",
+     "deleteSession": "删除会话",
+     "messagesCount": "{{count}} 条消息",
+diff --git a/web/frontend/src/store/gateway.ts b/web/frontend/src/store/gateway.ts
+index 1bdec622..ed20e7e5 100644
+--- a/web/frontend/src/store/gateway.ts
++++ b/web/frontend/src/store/gateway.ts
+@@ -1,21 +1,12 @@
+ import { atom, getDefaultStore } from "jotai"
+ 
+ import { type GatewayStatusResponse, getGatewayStatus } from "@/api/gateway"
+-
+-export type GatewayState =
+-  | "running"
+-  | "starting"
+-  | "restarting"
+-  | "stopping"
+-  | "stopped"
+-  | "error"
+-  | "unknown"
+-
+-export interface GatewayStoreState {
+-  status: GatewayState
+-  canStart: boolean
+-  restartRequired: boolean
+-}
++import { getGatewayPollIntervalMs } from "./gateway-polling"
++import {
++  applyGatewayStatusPatch,
++  type GatewayState,
++  type GatewayStoreState,
++} from "./gateway-store-state"
+ 
+ type GatewayStorePatch = Partial<GatewayStoreState>
+ 
+@@ -23,10 +14,9 @@ const DEFAULT_GATEWAY_STATE: GatewayStoreState = {
+   status: "unknown",
+   canStart: true,
+   restartRequired: false,
++  pid: undefined,
+ }
+ 
+-const GATEWAY_POLL_INTERVAL_MS = 2000
+-const GATEWAY_TRANSIENT_POLL_INTERVAL_MS = 1000
+ const GATEWAY_STOPPING_TIMEOUT_MS = 5000
+ 
+ interface RefreshGatewayStateOptions {
+@@ -108,36 +98,19 @@ export function applyGatewayStatusToStore(
+   data: Partial<
+     Pick<
+       GatewayStatusResponse,
+-      "gateway_status" | "gateway_start_allowed" | "gateway_restart_required"
++      | "gateway_status"
++      | "gateway_start_allowed"
++      | "gateway_restart_required"
++      | "pid"
+     >
+   >,
+ ) {
+-  updateGatewayStore((prev) => ({
+-    status:
+-      prev.status === "stopping" && data.gateway_status === "running"
+-        ? "stopping"
+-        : (data.gateway_status ?? prev.status),
+-    canStart:
+-      prev.status === "stopping" && data.gateway_status === "running"
+-        ? false
+-        : (data.gateway_start_allowed ?? prev.canStart),
+-    restartRequired:
+-      prev.status === "stopping" && data.gateway_status === "running"
+-        ? false
+-        : (data.gateway_restart_required ?? prev.restartRequired),
+-  }))
++  updateGatewayStore((prev) => applyGatewayStatusPatch(prev, data))
+ }
+ 
+ function nextGatewayPollInterval() {
+   const status = getDefaultStore().get(gatewayAtom).status
+-  if (
+-    status === "starting" ||
+-    status === "restarting" ||
+-    status === "stopping"
+-  ) {
+-    return GATEWAY_TRANSIENT_POLL_INTERVAL_MS
+-  }
+-  return GATEWAY_POLL_INTERVAL_MS
++  return getGatewayPollIntervalMs(status)
+ }
+ 
+ function scheduleGatewayPoll(delay = nextGatewayPollInterval()) {
+diff --git a/web/frontend/src/features/chat/gateway-reconnect.test.ts b/web/frontend/src/features/chat/gateway-reconnect.test.ts
+new file mode 100644
+index 00000000..57964236
+--- /dev/null
++++ b/web/frontend/src/features/chat/gateway-reconnect.test.ts
+@@ -0,0 +1,38 @@
++import assert from "node:assert/strict"
++import test from "node:test"
++
++import { shouldReconnectForGatewayUpdate } from "./gateway-reconnect.ts"
++
++test("shouldReconnectForGatewayUpdate returns true when running gateway pid changes", () => {
++  assert.equal(
++    shouldReconnectForGatewayUpdate(
++      { status: "running", pid: 101 },
++      { status: "running", pid: 202 },
++    ),
++    true,
++  )
++})
++
++test("shouldReconnectForGatewayUpdate ignores updates without a running-to-running pid change", () => {
++  assert.equal(
++    shouldReconnectForGatewayUpdate(
++      { status: "running", pid: 101 },
++      { status: "running", pid: 101 },
++    ),
++    false,
++  )
++  assert.equal(
++    shouldReconnectForGatewayUpdate(
++      { status: "starting", pid: undefined },
++      { status: "running", pid: 202 },
++    ),
++    false,
++  )
++  assert.equal(
++    shouldReconnectForGatewayUpdate(
++      { status: "running", pid: undefined },
++      { status: "running", pid: 202 },
++    ),
++    false,
++  )
++})
+diff --git a/web/frontend/src/features/chat/gateway-reconnect.ts b/web/frontend/src/features/chat/gateway-reconnect.ts
+new file mode 100644
+index 00000000..0b502255
+--- /dev/null
++++ b/web/frontend/src/features/chat/gateway-reconnect.ts
+@@ -0,0 +1,17 @@
++export type GatewayConnectionSnapshot = {
++  status: "running" | "starting" | "restarting" | "stopping" | "stopped" | "error" | "unknown"
++  pid?: number
++}
++
++export function shouldReconnectForGatewayUpdate(
++  previous: GatewayConnectionSnapshot | null,
++  next: GatewayConnectionSnapshot,
++) {
++  return (
++    previous?.status === "running" &&
++    next.status === "running" &&
++    previous.pid !== undefined &&
++    next.pid !== undefined &&
++    previous.pid !== next.pid
++  )
++}
+diff --git a/web/frontend/src/features/chat/socket-connection.ts b/web/frontend/src/features/chat/socket-connection.ts
+new file mode 100644
+index 00000000..4d0082f5
+--- /dev/null
++++ b/web/frontend/src/features/chat/socket-connection.ts
+@@ -0,0 +1,123 @@
++export const CHAT_SEND_CONNECT_TIMEOUT_MS = 3_000
++export const CHAT_SOCKET_HEALTHCHECK_TIMEOUT_MS = 1_500
++
++interface MinimalSocketLike extends EventTarget {
++  readyState: number
++}
++
++interface MinimalMessageSocketLike extends MinimalSocketLike {
++  send(message: string): void
++}
++
++export function waitForSocketOpen(
++  socket: MinimalSocketLike | null,
++  timeoutMs: number = CHAT_SEND_CONNECT_TIMEOUT_MS,
++): Promise<boolean> {
++  if (!socket) {
++    return Promise.resolve(false)
++  }
++
++  if (socket.readyState === WebSocket.OPEN) {
++    return Promise.resolve(true)
++  }
++
++  if (socket.readyState !== WebSocket.CONNECTING) {
++    return Promise.resolve(false)
++  }
++
++  return new Promise((resolve) => {
++    let settled = false
++
++    const cleanup = () => {
++      socket.removeEventListener("open", handleOpen)
++      socket.removeEventListener("error", handleFailure)
++      socket.removeEventListener("close", handleFailure)
++      clearTimeout(timer)
++    }
++
++    const finish = (result: boolean) => {
++      if (settled) {
++        return
++      }
++      settled = true
++      cleanup()
++      resolve(result)
++    }
++
++    const handleOpen = () => finish(true)
++    const handleFailure = () => finish(false)
++
++    const timer = setTimeout(() => finish(false), timeoutMs)
++
++    socket.addEventListener("open", handleOpen)
++    socket.addEventListener("error", handleFailure)
++    socket.addEventListener("close", handleFailure)
++  })
++}
++
++export function verifySocketHealth(
++  socket: MinimalMessageSocketLike | null,
++  timeoutMs: number = CHAT_SOCKET_HEALTHCHECK_TIMEOUT_MS,
++  createPingId: () => string = () => `ping-${Date.now()}`,
++): Promise<boolean> {
++  if (!socket || socket.readyState !== WebSocket.OPEN) {
++    return Promise.resolve(false)
++  }
++
++  return new Promise((resolve) => {
++    let settled = false
++    const pingId = createPingId()
++
++    const cleanup = () => {
++      socket.removeEventListener("message", handleMessage)
++      socket.removeEventListener("error", handleFailure)
++      socket.removeEventListener("close", handleFailure)
++      clearTimeout(timer)
++    }
++
++    const finish = (result: boolean) => {
++      if (settled) {
++        return
++      }
++      settled = true
++      cleanup()
++      resolve(result)
++    }
++
++    const handleFailure = () => finish(false)
++    const handleMessage = (event: Event) => {
++      if (!(event instanceof MessageEvent)) {
++        return
++      }
++
++      try {
++        const message = JSON.parse(event.data as string) as {
++          type?: string
++          id?: string
++        }
++        if (message.type === "pong" && message.id === pingId) {
++          finish(true)
++        }
++      } catch {
++        // Ignore non-JSON frames from other handlers.
++      }
++    }
++
++    const timer = setTimeout(() => finish(false), timeoutMs)
++
++    socket.addEventListener("message", handleMessage)
++    socket.addEventListener("error", handleFailure)
++    socket.addEventListener("close", handleFailure)
++
++    try {
++      socket.send(
++        JSON.stringify({
++          type: "ping",
++          id: pingId,
++        }),
++      )
++    } catch {
++      finish(false)
++    }
++  })
++}
+diff --git a/web/frontend/src/features/chat/socket-connection.test.ts b/web/frontend/src/features/chat/socket-connection.test.ts
+new file mode 100644
+index 00000000..b43b5290
+--- /dev/null
++++ b/web/frontend/src/features/chat/socket-connection.test.ts
+@@ -0,0 +1,101 @@
++import assert from "node:assert/strict"
++import test from "node:test"
++
++import {
++  CHAT_SEND_CONNECT_TIMEOUT_MS,
++  CHAT_SOCKET_HEALTHCHECK_TIMEOUT_MS,
++  verifySocketHealth,
++  waitForSocketOpen,
++} from "./socket-connection.ts"
++
++class FakeSocket extends EventTarget {
++  readyState: number
++  sentMessages: string[] = []
++
++  constructor(readyState: number) {
++    super()
++    this.readyState = readyState
++  }
++
++  open() {
++    this.readyState = WebSocket.OPEN
++    this.dispatchEvent(new Event("open"))
++  }
++
++  fail(type: "error" | "close") {
++    this.readyState = WebSocket.CLOSED
++    this.dispatchEvent(new Event(type))
++  }
++
++  send(message: string) {
++    this.sentMessages.push(message)
++  }
++
++  receive(data: unknown) {
++    this.dispatchEvent(
++      new MessageEvent("message", {
++        data: typeof data === "string" ? data : JSON.stringify(data),
++      }),
++    )
++  }
++}
++
++test("waitForSocketOpen resolves immediately for open sockets", async () => {
++  const socket = new FakeSocket(WebSocket.OPEN)
++
++  await assert.doesNotReject(() => waitForSocketOpen(socket, 20))
++  assert.equal(await waitForSocketOpen(socket, 20), true)
++})
++
++test("waitForSocketOpen resolves when a connecting socket opens", async () => {
++  const socket = new FakeSocket(WebSocket.CONNECTING)
++  const pending = waitForSocketOpen(socket, 50)
++
++  setTimeout(() => socket.open(), 5)
++
++  assert.equal(await pending, true)
++})
++
++test("waitForSocketOpen rejects when a socket closes before opening", async () => {
++  const socket = new FakeSocket(WebSocket.CONNECTING)
++  const pending = waitForSocketOpen(socket, 50)
++
++  setTimeout(() => socket.fail("close"), 5)
++
++  assert.equal(await pending, false)
++})
++
++test("waitForSocketOpen rejects after the timeout", async () => {
++  const socket = new FakeSocket(WebSocket.CONNECTING)
++
++  assert.equal(
++    await waitForSocketOpen(socket, Math.min(20, CHAT_SEND_CONNECT_TIMEOUT_MS)),
++    false,
++  )
++})
++
++test("verifySocketHealth sends a ping and resolves on matching pong", async () => {
++  const socket = new FakeSocket(WebSocket.OPEN)
++  const pending = verifySocketHealth(socket, 50, () => "ping-1")
++
++  setTimeout(() => {
++    socket.receive({ type: "pong", id: "ping-1" })
++  }, 5)
++
++  assert.equal(await pending, true)
++  assert.equal(socket.sentMessages.length, 1)
++  assert.match(socket.sentMessages[0], /"type":"ping"/)
++})
++
++test("verifySocketHealth rejects when pong does not arrive", async () => {
++  const socket = new FakeSocket(WebSocket.OPEN)
++
++  assert.equal(
++    await verifySocketHealth(
++      socket,
++      Math.min(20, CHAT_SOCKET_HEALTHCHECK_TIMEOUT_MS),
++      () => "ping-timeout",
++    ),
++    false,
++  )
++})
+diff --git a/web/frontend/src/store/gateway-polling.ts b/web/frontend/src/store/gateway-polling.ts
+new file mode 100644
+index 00000000..99edad52
+--- /dev/null
++++ b/web/frontend/src/store/gateway-polling.ts
+@@ -0,0 +1,22 @@
++export type GatewayPollingState =
++  | "running"
++  | "starting"
++  | "restarting"
++  | "stopping"
++  | "stopped"
++  | "error"
++  | "unknown"
++
++export const GATEWAY_POLL_INTERVAL_MS = 60_000
++export const GATEWAY_TRANSIENT_POLL_INTERVAL_MS = 3_000
++
++export function getGatewayPollIntervalMs(status: GatewayPollingState) {
++  if (
++    status === "starting" ||
++    status === "restarting" ||
++    status === "stopping"
++  ) {
++    return GATEWAY_TRANSIENT_POLL_INTERVAL_MS
++  }
++  return GATEWAY_POLL_INTERVAL_MS
++}
+diff --git a/web/frontend/src/store/gateway-store-state.ts b/web/frontend/src/store/gateway-store-state.ts
+new file mode 100644
+index 00000000..2ec07747
+--- /dev/null
++++ b/web/frontend/src/store/gateway-store-state.ts
+@@ -0,0 +1,43 @@
++export type GatewayState =
++  | "running"
++  | "starting"
++  | "restarting"
++  | "stopping"
++  | "stopped"
++  | "error"
++  | "unknown"
++
++export interface GatewayStoreState {
++  status: GatewayState
++  canStart: boolean
++  restartRequired: boolean
++  pid?: number
++}
++
++export interface GatewayStatusPatch {
++  gateway_status?: GatewayState
++  gateway_start_allowed?: boolean
++  gateway_restart_required?: boolean
++  pid?: number
++}
++
++export function applyGatewayStatusPatch(
++  prev: GatewayStoreState,
++  data: GatewayStatusPatch,
++): GatewayStoreState {
++  return {
++    status:
++      prev.status === "stopping" && data.gateway_status === "running"
++        ? "stopping"
++        : (data.gateway_status ?? prev.status),
++    canStart:
++      prev.status === "stopping" && data.gateway_status === "running"
++        ? false
++        : (data.gateway_start_allowed ?? prev.canStart),
++    restartRequired:
++      prev.status === "stopping" && data.gateway_status === "running"
++        ? false
++        : (data.gateway_restart_required ?? prev.restartRequired),
++    pid: data.pid ?? prev.pid,
++  }
++}
+diff --git a/web/frontend/src/store/gateway.test.ts b/web/frontend/src/store/gateway.test.ts
+new file mode 100644
+index 00000000..96a62f0f
+--- /dev/null
++++ b/web/frontend/src/store/gateway.test.ts
+@@ -0,0 +1,17 @@
++import assert from "node:assert/strict"
++import test from "node:test"
++
++import { getGatewayPollIntervalMs } from "./gateway-polling.ts"
++
++test("getGatewayPollIntervalMs uses slow polling for stable states", () => {
++  assert.equal(getGatewayPollIntervalMs("running"), 60_000)
++  assert.equal(getGatewayPollIntervalMs("stopped"), 60_000)
++  assert.equal(getGatewayPollIntervalMs("error"), 60_000)
++  assert.equal(getGatewayPollIntervalMs("unknown"), 60_000)
++})
++
++test("getGatewayPollIntervalMs uses faster polling for transient states", () => {
++  assert.equal(getGatewayPollIntervalMs("starting"), 3_000)
++  assert.equal(getGatewayPollIntervalMs("restarting"), 3_000)
++  assert.equal(getGatewayPollIntervalMs("stopping"), 3_000)
++})
+diff --git a/web/frontend/src/store/gateway-store-state.test.ts b/web/frontend/src/store/gateway-store-state.test.ts
+new file mode 100644
+index 00000000..241e8665
+--- /dev/null
++++ b/web/frontend/src/store/gateway-store-state.test.ts
+@@ -0,0 +1,23 @@
++import assert from "node:assert/strict"
++import test from "node:test"
++
++import { applyGatewayStatusPatch, type GatewayStoreState } from "./gateway-store-state.ts"
++
++test("applyGatewayStatusPatch stores the gateway pid", () => {
++  const prev: GatewayStoreState = {
++    status: "unknown",
++    canStart: true,
++    restartRequired: false,
++    pid: undefined,
++  }
++
++  const next = applyGatewayStatusPatch(prev, {
++    gateway_status: "running",
++    gateway_start_allowed: false,
++    gateway_restart_required: false,
++    pid: 4242,
++  })
++
++  assert.equal(next.status, "running")
++  assert.equal(next.pid, 4242)
++})

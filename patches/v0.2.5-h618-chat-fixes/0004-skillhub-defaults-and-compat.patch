@@ -1,0 +1,112 @@
+diff --git a/pkg/config/skillhub_config_test.go b/pkg/config/skillhub_config_test.go
+index d17e6536..07974120 100644
+--- a/pkg/config/skillhub_config_test.go
++++ b/pkg/config/skillhub_config_test.go
+@@ -37,3 +37,12 @@ func TestSkillsRegistriesConfig_ParsesSkillHub(t *testing.T) {
+ 	assert.False(t, *cfg.Tools.Skills.Registries.SkillHub.UseProxy)
+ 	assert.Equal(t, "http://127.0.0.1:7890", cfg.Tools.Skills.Registries.SkillHub.Proxy)
+ }
++
++func TestDefaultConfigPrefersSkillHubOverClawHub(t *testing.T) {
++	cfg := DefaultConfig()
++
++	assert.False(t, cfg.Tools.Skills.Registries.ClawHub.Enabled)
++	assert.True(t, cfg.Tools.Skills.Registries.SkillHub.Enabled)
++	assert.Equal(t, "https://api.skillhub.tencent.com/api/v1/search", cfg.Tools.Skills.Registries.SkillHub.SearchURL)
++	assert.Equal(t, "https://api.skillhub.tencent.com/api/v1/download?slug={slug}", cfg.Tools.Skills.Registries.SkillHub.PrimaryDownloadURLTemplate)
++}
+diff --git a/pkg/skills/registry.go b/pkg/skills/registry.go
+index b5184627..0babaf23 100644
+--- a/pkg/skills/registry.go
++++ b/pkg/skills/registry.go
+@@ -134,10 +134,18 @@ func (rm *RegistryManager) AddRegistry(r SkillRegistry) {
+ func (rm *RegistryManager) GetRegistry(name string) SkillRegistry {
+ 	rm.mu.RLock()
+ 	defer rm.mu.RUnlock()
++
++	var skillHub SkillRegistry
+ 	for _, r := range rm.registries {
+ 		if r.Name() == name {
+ 			return r
+ 		}
++		if r.Name() == "skillhub" {
++			skillHub = r
++		}
++	}
++	if name == "clawhub" && skillHub != nil {
++		return skillHub
+ 	}
+ 	return nil
+ }
+diff --git a/pkg/skills/registry_test.go b/pkg/skills/registry_test.go
+index a4694bd4..ae9f4a7a 100644
+--- a/pkg/skills/registry_test.go
++++ b/pkg/skills/registry_test.go
+@@ -124,6 +124,16 @@ func TestRegistryManagerGetRegistry(t *testing.T) {
+ 	assert.Nil(t, got)
+ }
+ 
++func TestRegistryManagerGetRegistryFallsBackFromClawHubToSkillHub(t *testing.T) {
++	mgr := NewRegistryManager()
++	mock := &mockRegistry{name: "skillhub"}
++	mgr.AddRegistry(mock)
++
++	got := mgr.GetRegistry("clawhub")
++	assert.NotNil(t, got)
++	assert.Equal(t, "skillhub", got.Name())
++}
++
+ func TestRegistryManagerSearchAllRespectLimit(t *testing.T) {
+ 	mgr := NewRegistryManager()
+ 	results := make([]SearchResult, 20)
+diff --git a/pkg/tools/skills_install.go b/pkg/tools/skills_install.go
+index 71bfe730..1d982621 100644
+--- a/pkg/tools/skills_install.go
++++ b/pkg/tools/skills_install.go
+@@ -57,7 +57,7 @@ func (t *InstallSkillTool) Parameters() map[string]any {
+ 			},
+ 			"registry": map[string]any{
+ 				"type":        "string",
+-				"description": "Registry to install from (required, e.g., 'clawhub')",
++				"description": "Registry to install from (required, e.g., 'skillhub')",
+ 			},
+ 			"force": map[string]any{
+ 				"type":        "boolean",
+diff --git a/pkg/tools/skills_install_test.go b/pkg/tools/skills_install_test.go
+index 676fcecc..b8e2f362 100644
+--- a/pkg/tools/skills_install_test.go
++++ b/pkg/tools/skills_install_test.go
+@@ -92,6 +92,12 @@ func TestInstallSkillToolParameters(t *testing.T) {
+ 	assert.True(t, ok)
+ 	assert.Contains(t, required, "slug")
+ 	assert.Contains(t, required, "registry")
++
++	registryProp, ok := props["registry"].(map[string]any)
++	assert.True(t, ok)
++	description, ok := registryProp["description"].(string)
++	assert.True(t, ok)
++	assert.Contains(t, description, "skillhub")
+ }
+ 
+ func TestInstallSkillToolMissingRegistry(t *testing.T) {
+diff --git a/web/backend/api/skills_test.go b/web/backend/api/skills_test.go
+index 17aef485..b265bbe6 100644
+--- a/web/backend/api/skills_test.go
++++ b/web/backend/api/skills_test.go
+@@ -128,6 +128,16 @@ func TestHandleListSkills(t *testing.T) {
+ 	}
+ }
+ 
++func TestRegistrySkillURLUsesSkillHubTemplate(t *testing.T) {
++	cfg := config.DefaultConfig()
++	cfg.Tools.Skills.Registries.SkillHub.PrimaryDownloadURLTemplate = "https://lightmake.site/api/v1/download?slug={slug}"
++
++	got := registrySkillURL(cfg, "skillhub", "github")
++	if got != "https://lightmake.site/api/v1/download?slug=github" {
++		t.Fatalf("registrySkillURL(skillhub) = %q, want %q", got, "https://lightmake.site/api/v1/download?slug=github")
++	}
++}
++
+ func TestHandleGetSkill(t *testing.T) {
+ 	configPath, cleanup := setupOAuthTestEnv(t)
+ 	defer cleanup()

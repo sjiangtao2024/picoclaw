@@ -47,6 +47,7 @@
     "noHistory": "暂无对话历史",
     "historyLoadFailed": "加载历史记录失败",
     "historyOpenFailed": "打开该历史会话失败",
+    "connectionFailed": "聊天连接未建立，请刷新页面后重试。",
     "loadingMore": "加载更多...",
     "deleteSession": "删除会话",
     "messagesCount": "{{count}} 条消息",

@@ -478,14 +478,33 @@ func (c *PicoChannel) readLoop(pc *picoConn) {
 			return
 		}
 
+		logger.WarnCF("pico", "Received Pico WebSocket frame", map[string]any{
+			"conn_id":    pc.id,
+			"session_id": pc.sessionID,
+			"bytes":      len(rawMsg),
+		})
+
 		_ = pc.conn.SetReadDeadline(time.Now().Add(readTimeout))
 
 		var msg PicoMessage
 		if err := json.Unmarshal(rawMsg, &msg); err != nil {
+			logger.WarnCF("pico", "Failed to parse Pico WebSocket frame", map[string]any{
+				"conn_id":    pc.id,
+				"session_id": pc.sessionID,
+				"error":      err.Error(),
+				"raw":        truncate(string(rawMsg), 200),
+			})
 			errMsg := newError("invalid_message", "failed to parse message")
 			pc.writeJSON(errMsg)
 			continue
 		}
+
+		logger.WarnCF("pico", "Parsed Pico WebSocket message", map[string]any{
+			"conn_id":    pc.id,
+			"session_id": pc.sessionID,
+			"type":       msg.Type,
+			"id":         msg.ID,
+		})
 
 		c.handleMessage(pc, msg)
 	}
@@ -539,6 +558,12 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	content, _ := msg.Payload["content"].(string)
 	media, err := parseInlineImageMedia(msg.Payload)
 	if err != nil {
+		logger.WarnCF("pico", "Rejected Pico message due to invalid media", map[string]any{
+			"conn_id":    pc.id,
+			"session_id": pc.sessionID,
+			"id":         msg.ID,
+			"error":      err.Error(),
+		})
 		errMsg := newErrorWithPayload("invalid_media", err.Error(), map[string]any{
 			"request_id": msg.ID,
 		})
@@ -547,6 +572,11 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 	}
 
 	if strings.TrimSpace(content) == "" && len(media) == 0 {
+		logger.WarnCF("pico", "Rejected Pico message due to empty content", map[string]any{
+			"conn_id":    pc.id,
+			"session_id": pc.sessionID,
+			"id":         msg.ID,
+		})
 		errMsg := newErrorWithPayload("empty_content", "message content is empty", map[string]any{
 			"request_id": msg.ID,
 		})
@@ -570,7 +600,9 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
 		"conn_id":    pc.id,
 	}
 
-	logger.DebugCF("pico", "Received message", map[string]any{
+	logger.WarnCF("pico", "Dispatching Pico message", map[string]any{
+		"conn_id":    pc.id,
+		"id":         msg.ID,
 		"session_id": sessionID,
 		"preview":    truncate(content, 50),
 		"media":      len(media),

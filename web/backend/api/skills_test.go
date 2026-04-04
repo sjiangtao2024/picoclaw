@@ -128,6 +128,16 @@ func TestHandleListSkills(t *testing.T) {
 	}
 }
 
+func TestRegistrySkillURLUsesSkillHubTemplate(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Tools.Skills.Registries.SkillHub.PrimaryDownloadURLTemplate = "https://lightmake.site/api/v1/download?slug={slug}"
+
+	got := registrySkillURL(cfg, "skillhub", "github")
+	if got != "https://lightmake.site/api/v1/download?slug=github" {
+		t.Fatalf("registrySkillURL(skillhub) = %q, want %q", got, "https://lightmake.site/api/v1/download?slug=github")
+	}
+}
+
 func TestHandleGetSkill(t *testing.T) {
 	configPath, cleanup := setupOAuthTestEnv(t)
 	defer cleanup()

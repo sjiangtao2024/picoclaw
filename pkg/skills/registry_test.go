@@ -124,6 +124,16 @@ func TestRegistryManagerGetRegistry(t *testing.T) {
 	assert.Nil(t, got)
 }
 
+func TestRegistryManagerGetRegistryFallsBackFromClawHubToSkillHub(t *testing.T) {
+	mgr := NewRegistryManager()
+	mock := &mockRegistry{name: "skillhub"}
+	mgr.AddRegistry(mock)
+
+	got := mgr.GetRegistry("clawhub")
+	assert.NotNil(t, got)
+	assert.Equal(t, "skillhub", got.Name())
+}
+
 func TestRegistryManagerSearchAllRespectLimit(t *testing.T) {
 	mgr := NewRegistryManager()
 	results := make([]SearchResult, 20)

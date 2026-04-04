@@ -92,6 +92,12 @@ func TestInstallSkillToolParameters(t *testing.T) {
 	assert.True(t, ok)
 	assert.Contains(t, required, "slug")
 	assert.Contains(t, required, "registry")
+
+	registryProp, ok := props["registry"].(map[string]any)
+	assert.True(t, ok)
+	description, ok := registryProp["description"].(string)
+	assert.True(t, ok)
+	assert.Contains(t, description, "skillhub")
 }
 
 func TestInstallSkillToolMissingRegistry(t *testing.T) {

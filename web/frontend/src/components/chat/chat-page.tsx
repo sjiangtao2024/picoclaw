@@ -109,10 +109,10 @@ export function ChatPage() {
     }
   }, [messages, isTyping, isAtBottom])
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if ((!input.trim() && attachments.length === 0) || !canSend) return
     if (
-      sendMessage({
+      await sendMessage({
         content: input,
         attachments,
       })

@@ -57,7 +57,7 @@ func (t *InstallSkillTool) Parameters() map[string]any {
 			},
 			"registry": map[string]any{
 				"type":        "string",
-				"description": "Registry to install from (required, e.g., 'clawhub')",
+				"description": "Registry to install from (required, e.g., 'skillhub')",
 			},
 			"force": map[string]any{
 				"type":        "boolean",

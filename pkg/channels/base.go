@@ -103,6 +103,8 @@ func NewBaseChannel(
 	allowList []string,
 	opts ...BaseChannelOption,
 ) *BaseChannel {
+	allowList = sanitizeAllowList(allowList)
+
 	bc := &BaseChannel{
 		config:    config,
 		bus:       bus,
@@ -125,6 +127,25 @@ func NewBaseChannel(
 	}
 
 	return bc
+}
+
+func sanitizeAllowList(allowList []string) []string {
+	if len(allowList) == 0 {
+		return nil
+	}
+
+	sanitized := make([]string, 0, len(allowList))
+	for _, allowed := range allowList {
+		trimmed := strings.TrimSpace(allowed)
+		if trimmed == "" {
+			continue
+		}
+		sanitized = append(sanitized, trimmed)
+	}
+	if len(sanitized) == 0 {
+		return nil
+	}
+	return sanitized
 }
 
 // MaxMessageLength returns the maximum message length (in runes) for this channel.
@@ -252,6 +273,18 @@ func (c *BaseChannel) HandleMessage(
 	metadata map[string]string,
 	senderOpts ...bus.SenderInfo,
 ) {
+	logger.WarnCF("channels", "BaseChannel received inbound message", map[string]any{
+		"channel":      c.name,
+		"chat_id":      chatID,
+		"message_id":   messageID,
+		"sender_id":    senderID,
+		"content_len":  len(content),
+		"media_count":  len(media),
+		"has_metadata": len(metadata) > 0,
+		"peer_kind":    peer.Kind,
+		"peer_id":      peer.ID,
+	})
+
 	// Use SenderInfo-based allow check when available, else fall back to string
 	var sender bus.SenderInfo
 	if len(senderOpts) > 0 {
@@ -259,10 +292,25 @@ func (c *BaseChannel) HandleMessage(
 	}
 	if sender.CanonicalID != "" || sender.PlatformID != "" {
 		if !c.IsAllowedSender(sender) {
+			logger.WarnCF("channels", "BaseChannel rejected inbound message by structured sender allowlist", map[string]any{
+				"channel":       c.name,
+				"chat_id":       chatID,
+				"sender_id":     senderID,
+				"canonical_id":  sender.CanonicalID,
+				"platform_id":   sender.PlatformID,
+				"platform":      sender.Platform,
+				"display_name":  sender.DisplayName,
+				"username":      sender.Username,
+			})
 			return
 		}
 	} else {
 		if !c.IsAllowed(senderID) {
+			logger.WarnCF("channels", "BaseChannel rejected inbound message by allowlist", map[string]any{
+				"channel":   c.name,
+				"chat_id":   chatID,
+				"sender_id": senderID,
+			})
 			return
 		}
 	}
@@ -287,6 +335,19 @@ func (c *BaseChannel) HandleMessage(
 		MediaScope: scope,
 		Metadata:   metadata,
 	}
+
+	logger.WarnCF("channels", "BaseChannel prepared inbound bus message", map[string]any{
+		"channel":      msg.Channel,
+		"chat_id":      msg.ChatID,
+		"sender_id":    msg.SenderID,
+		"message_id":   msg.MessageID,
+		"session_key":  msg.SessionKey,
+		"media_scope":  msg.MediaScope,
+		"content_len":  len(msg.Content),
+		"media_count":  len(msg.Media),
+		"peer_kind":    msg.Peer.Kind,
+		"peer_id":      msg.Peer.ID,
+	})
 
 	// Auto-trigger typing indicator, message reaction, and placeholder before publishing.
 	// Each capability is independent — all three may fire for the same message.
@@ -325,6 +386,14 @@ func (c *BaseChannel) HandleMessage(
 			"channel": c.name,
 			"chat_id": chatID,
 			"error":   err.Error(),
+		})
+	} else {
+		logger.WarnCF("channels", "BaseChannel published inbound bus message", map[string]any{
+			"channel":     msg.Channel,
+			"chat_id":     msg.ChatID,
+			"sender_id":   msg.SenderID,
+			"message_id":  msg.MessageID,
+			"session_key": msg.SessionKey,
 		})
 	}
 }

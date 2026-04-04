@@ -478,6 +478,16 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				return nil
 			}
 
+			logger.WarnCF("agent", "AgentLoop dequeued inbound bus message", map[string]any{
+				"channel":     msg.Channel,
+				"chat_id":     msg.ChatID,
+				"sender_id":   msg.SenderID,
+				"message_id":  msg.MessageID,
+				"session_key": msg.SessionKey,
+				"content_len": len(msg.Content),
+				"media_count": len(msg.Media),
+			})
+
 			// Start a goroutine that drains the bus while processMessage is
 			// running. Only messages that resolve to the active turn scope are
 			// redirected into steering; other inbound messages are requeued.
@@ -519,6 +529,16 @@ func (al *AgentLoop) Run(ctx context.Context) error {
 				defer cancelDrain()
 
 				response, err := al.processMessage(ctx, msg)
+				logger.WarnCF("agent", "AgentLoop processMessage returned", map[string]any{
+					"channel":          msg.Channel,
+					"chat_id":          msg.ChatID,
+					"sender_id":        msg.SenderID,
+					"message_id":       msg.MessageID,
+					"session_key":      msg.SessionKey,
+					"response_len":     len(response),
+					"process_err":      err != nil,
+					"process_err_text": errString(err),
+				})
 				if err != nil {
 					response = fmt.Sprintf("Error processing message: %v", err)
 				}
@@ -1351,6 +1371,16 @@ func (al *AgentLoop) ProcessHeartbeat(
 }
 
 func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+	logger.WarnCF("agent", "AgentLoop entered processMessage", map[string]any{
+		"channel":     msg.Channel,
+		"chat_id":     msg.ChatID,
+		"sender_id":   msg.SenderID,
+		"message_id":  msg.MessageID,
+		"session_key": msg.SessionKey,
+		"content_len": len(msg.Content),
+		"media_count": len(msg.Media),
+	})
+
 	// Add message preview to log (show full content for error messages)
 	var logContent string
 	if strings.Contains(msg.Content, "Error:") || strings.Contains(msg.Content, "error") {
@@ -1385,6 +1415,14 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 
 	route, agent, routeErr := al.resolveMessageRoute(msg)
 	if routeErr != nil {
+		logger.WarnCF("agent", "AgentLoop failed to resolve message route", map[string]any{
+			"channel":        msg.Channel,
+			"chat_id":        msg.ChatID,
+			"sender_id":      msg.SenderID,
+			"message_id":     msg.MessageID,
+			"session_key":    msg.SessionKey,
+			"route_err":      routeErr.Error(),
+		})
 		return "", routeErr
 	}
 
@@ -1423,6 +1461,17 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 		EnableSummary:     true,
 		SendResponse:      false,
 	}
+	logger.WarnCF("agent", "AgentLoop resolved message route", map[string]any{
+		"channel":       msg.Channel,
+		"chat_id":       msg.ChatID,
+		"sender_id":     msg.SenderID,
+		"message_id":    msg.MessageID,
+		"session_key":   sessionKey,
+		"route_agent":   route.AgentID,
+		"route_channel": route.Channel,
+		"matched_by":    route.MatchedBy,
+		"agent_id":      agent.ID,
+	})
 
 	// context-dependent commands check their own Runtime fields and report
 	// "unavailable" when the required capability is nil.
@@ -1440,6 +1489,13 @@ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage)
 	}
 
 	return al.runAgentLoop(ctx, agent, opts)
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (al *AgentLoop) resolveMessageRoute(msg bus.InboundMessage) (routing.ResolvedRoute, *AgentInstance, error) {

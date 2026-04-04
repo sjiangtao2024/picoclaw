@@ -134,10 +134,18 @@ func (rm *RegistryManager) AddRegistry(r SkillRegistry) {
 func (rm *RegistryManager) GetRegistry(name string) SkillRegistry {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
+
+	var skillHub SkillRegistry
 	for _, r := range rm.registries {
 		if r.Name() == name {
 			return r
 		}
+		if r.Name() == "skillhub" {
+			skillHub = r
+		}
+	}
+	if name == "clawhub" && skillHub != nil {
+		return skillHub
 	}
 	return nil
 }

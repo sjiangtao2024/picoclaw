@@ -37,3 +37,12 @@ func TestSkillsRegistriesConfig_ParsesSkillHub(t *testing.T) {
 	assert.False(t, *cfg.Tools.Skills.Registries.SkillHub.UseProxy)
 	assert.Equal(t, "http://127.0.0.1:7890", cfg.Tools.Skills.Registries.SkillHub.Proxy)
 }
+
+func TestDefaultConfigPrefersSkillHubOverClawHub(t *testing.T) {
+	cfg := DefaultConfig()
+
+	assert.False(t, cfg.Tools.Skills.Registries.ClawHub.Enabled)
+	assert.True(t, cfg.Tools.Skills.Registries.SkillHub.Enabled)
+	assert.Equal(t, "https://api.skillhub.tencent.com/api/v1/search", cfg.Tools.Skills.Registries.SkillHub.SearchURL)
+	assert.Equal(t, "https://api.skillhub.tencent.com/api/v1/download?slug={slug}", cfg.Tools.Skills.Registries.SkillHub.PrimaryDownloadURLTemplate)
+}
