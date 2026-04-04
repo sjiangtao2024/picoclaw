@@ -465,7 +465,7 @@ The skills tool configures skill discovery and installation via registries like 
 
 | Config                             | Type   | Default              | Description                                  |
 |------------------------------------|--------|----------------------|----------------------------------------------|
-| `registries.clawhub.enabled`       | bool   | true                 | Enable ClawHub registry                      |
+| `registries.clawhub.enabled`       | bool   | false                | Enable ClawHub registry                      |
 | `registries.clawhub.base_url`      | string | `https://clawhub.ai` | ClawHub base URL                             |
 | `registries.clawhub.auth_token`    | string | `""`                 | Optional Bearer token for higher rate limits |
 | `registries.clawhub.search_path`   | string | `""`                 | Search API path                              |
@@ -474,6 +474,15 @@ The skills tool configures skill discovery and installation via registries like 
 | `registries.clawhub.timeout`       | int    | 0                    | Request timeout in seconds (0 = default)     |
 | `registries.clawhub.max_zip_size`  | int    | 0                    | Max skill zip size in bytes (0 = default)    |
 | `registries.clawhub.max_response_size` | int | 0                   | Max API response size in bytes (0 = default) |
+| `registries.skillhub.enabled`      | bool   | true                 | Enable Tencent SkillHub registry             |
+| `registries.skillhub.search_url`   | string | `https://lightmake.site/api/v1/search` | SkillHub search API URL         |
+| `registries.skillhub.primary_download_url_template` | string | `https://lightmake.site/api/v1/download?slug={slug}` | Primary SkillHub download URL template |
+| `registries.skillhub.download_url_template` | string | `https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/{slug}.zip` | Mirror SkillHub download URL template |
+| `registries.skillhub.use_proxy`    | bool   | env/default          | Override proxy usage for SkillHub requests   |
+| `registries.skillhub.proxy`        | string | `""`                 | Explicit HTTP/HTTPS/SOCKS5 proxy for SkillHub |
+| `registries.skillhub.timeout`      | int    | 0                    | Request timeout in seconds (0 = default)     |
+| `registries.skillhub.max_zip_size` | int    | 0                    | Max skill zip size in bytes (0 = default)    |
+| `registries.skillhub.max_response_size` | int | 0                  | Max API response size in bytes (0 = default) |
 
 ### GitHub Integration
 
@@ -498,9 +507,15 @@ The skills tool configures skill discovery and installation via registries like 
     "skills": {
       "registries": {
         "clawhub": {
-          "enabled": true,
+          "enabled": false,
           "base_url": "https://clawhub.ai",
           "auth_token": ""
+        },
+        "skillhub": {
+          "enabled": true,
+          "search_url": "https://lightmake.site/api/v1/search",
+          "primary_download_url_template": "https://lightmake.site/api/v1/download?slug={slug}",
+          "download_url_template": "https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/{slug}.zip"
         }
       },
       "github": {

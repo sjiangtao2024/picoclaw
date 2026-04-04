@@ -307,6 +307,7 @@ func registerSharedTools(
 		install_skills_enable := cfg.Tools.IsToolEnabled("install_skill")
 		if skills_enabled && (find_skills_enable || install_skills_enable) {
 			clawHubConfig := cfg.Tools.Skills.Registries.ClawHub
+			skillHubConfig := cfg.Tools.Skills.Registries.SkillHub
 			registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
 				MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
 				ClawHub: skills.ClawHubConfig{
@@ -319,6 +320,17 @@ func registerSharedTools(
 					Timeout:         clawHubConfig.Timeout,
 					MaxZipSize:      clawHubConfig.MaxZipSize,
 					MaxResponseSize: clawHubConfig.MaxResponseSize,
+				},
+				SkillHub: skills.SkillHubConfig{
+					Enabled:                    skillHubConfig.Enabled,
+					SearchURL:                  skillHubConfig.SearchURL,
+					PrimaryDownloadURLTemplate: skillHubConfig.PrimaryDownloadURLTemplate,
+					DownloadURLTemplate:        skillHubConfig.DownloadURLTemplate,
+					UseProxy:                   skillHubConfig.UseProxy,
+					Proxy:                      skillHubConfig.Proxy,
+					Timeout:                    skillHubConfig.Timeout,
+					MaxZipSize:                 skillHubConfig.MaxZipSize,
+					MaxResponseSize:            skillHubConfig.MaxResponseSize,
 				},
 			})
 

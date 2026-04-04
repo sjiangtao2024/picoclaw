@@ -65,6 +65,7 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) er
 	fmt.Printf("Installing skill '%s' from %s registry...\n", slug, registryName)
 
 	clawHubConfig := cfg.Tools.Skills.Registries.ClawHub
+	skillHubConfig := cfg.Tools.Skills.Registries.SkillHub
 	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
 		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
 		ClawHub: skills.ClawHubConfig{
@@ -77,6 +78,17 @@ func skillsInstallFromRegistry(cfg *config.Config, registryName, slug string) er
 			Timeout:         clawHubConfig.Timeout,
 			MaxZipSize:      clawHubConfig.MaxZipSize,
 			MaxResponseSize: clawHubConfig.MaxResponseSize,
+		},
+		SkillHub: skills.SkillHubConfig{
+			Enabled:                    skillHubConfig.Enabled,
+			SearchURL:                  skillHubConfig.SearchURL,
+			PrimaryDownloadURLTemplate: skillHubConfig.PrimaryDownloadURLTemplate,
+			DownloadURLTemplate:        skillHubConfig.DownloadURLTemplate,
+			UseProxy:                   skillHubConfig.UseProxy,
+			Proxy:                      skillHubConfig.Proxy,
+			Timeout:                    skillHubConfig.Timeout,
+			MaxZipSize:                 skillHubConfig.MaxZipSize,
+			MaxResponseSize:            skillHubConfig.MaxResponseSize,
 		},
 	})
 
@@ -238,6 +250,7 @@ func skillsSearchCmd(query string) {
 	}
 
 	clawHubConfig := cfg.Tools.Skills.Registries.ClawHub
+	skillHubConfig := cfg.Tools.Skills.Registries.SkillHub
 	registryMgr := skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
 		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
 		ClawHub: skills.ClawHubConfig{
@@ -250,6 +263,17 @@ func skillsSearchCmd(query string) {
 			Timeout:         clawHubConfig.Timeout,
 			MaxZipSize:      clawHubConfig.MaxZipSize,
 			MaxResponseSize: clawHubConfig.MaxResponseSize,
+		},
+		SkillHub: skills.SkillHubConfig{
+			Enabled:                    skillHubConfig.Enabled,
+			SearchURL:                  skillHubConfig.SearchURL,
+			PrimaryDownloadURLTemplate: skillHubConfig.PrimaryDownloadURLTemplate,
+			DownloadURLTemplate:        skillHubConfig.DownloadURLTemplate,
+			UseProxy:                   skillHubConfig.UseProxy,
+			Proxy:                      skillHubConfig.Proxy,
+			Timeout:                    skillHubConfig.Timeout,
+			MaxZipSize:                 skillHubConfig.MaxZipSize,
+			MaxResponseSize:            skillHubConfig.MaxResponseSize,
 		},
 	})
 

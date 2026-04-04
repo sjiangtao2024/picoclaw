@@ -512,6 +512,7 @@ func newSkillsLoader(workspace string) *skills.SkillsLoader {
 
 func newSkillsRegistryManager(cfg *config.Config) *skills.RegistryManager {
 	clawHubConfig := cfg.Tools.Skills.Registries.ClawHub
+	skillHubConfig := cfg.Tools.Skills.Registries.SkillHub
 	return skills.NewRegistryManagerFromConfig(skills.RegistryConfig{
 		MaxConcurrentSearches: cfg.Tools.Skills.MaxConcurrentSearches,
 		ClawHub: skills.ClawHubConfig{
@@ -524,6 +525,17 @@ func newSkillsRegistryManager(cfg *config.Config) *skills.RegistryManager {
 			Timeout:         clawHubConfig.Timeout,
 			MaxZipSize:      clawHubConfig.MaxZipSize,
 			MaxResponseSize: clawHubConfig.MaxResponseSize,
+		},
+		SkillHub: skills.SkillHubConfig{
+			Enabled:                    skillHubConfig.Enabled,
+			SearchURL:                  skillHubConfig.SearchURL,
+			PrimaryDownloadURLTemplate: skillHubConfig.PrimaryDownloadURLTemplate,
+			DownloadURLTemplate:        skillHubConfig.DownloadURLTemplate,
+			UseProxy:                   skillHubConfig.UseProxy,
+			Proxy:                      skillHubConfig.Proxy,
+			Timeout:                    skillHubConfig.Timeout,
+			MaxZipSize:                 skillHubConfig.MaxZipSize,
+			MaxResponseSize:            skillHubConfig.MaxResponseSize,
 		},
 	})
 }
@@ -747,6 +759,9 @@ func registrySkillURL(cfg *config.Config, registryName, slug string) string {
 			baseURL = "https://clawhub.ai"
 		}
 		return baseURL + "/skills/" + url.PathEscape(slug)
+	case "skillhub":
+		tpl := cfg.Tools.Skills.Registries.SkillHub.PrimaryDownloadURLTemplate
+		return strings.ReplaceAll(tpl, "{slug}", url.PathEscape(slug))
 	default:
 		return ""
 	}
