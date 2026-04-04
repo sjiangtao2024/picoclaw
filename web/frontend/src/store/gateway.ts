@@ -4,7 +4,6 @@ import { type GatewayStatusResponse, getGatewayStatus } from "@/api/gateway"
 import { getGatewayPollIntervalMs } from "./gateway-polling"
 import {
   applyGatewayStatusPatch,
-  type GatewayState,
   type GatewayStoreState,
 } from "./gateway-store-state"
 

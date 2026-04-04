@@ -28,7 +28,8 @@ import {
   getChatState,
   updateChatStore,
 } from "@/store/chat"
-import { type GatewayState, gatewayAtom } from "@/store/gateway"
+import { gatewayAtom } from "@/store/gateway"
+import { type GatewayState } from "@/store/gateway-store-state"
 
 const store = getDefaultStore()
 

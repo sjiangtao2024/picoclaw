@@ -3,6 +3,7 @@ import { type ChangeEvent, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import { toast } from "sonner"
 
+import { AgentSelector } from "@/components/chat/agent-selector"
 import { AssistantMessage } from "@/components/chat/assistant-message"
 import { ChatComposer } from "@/components/chat/chat-composer"
 import { ChatEmptyState } from "@/components/chat/chat-empty-state"
@@ -190,15 +191,18 @@ export function ChatPage() {
           hasScrolled ? "shadow-xs" : "shadow-none"
         }`}
         titleExtra={
-          hasAvailableModels && (
-            <ModelSelector
-              defaultModelName={defaultModelName}
-              apiKeyModels={apiKeyModels}
-              oauthModels={oauthModels}
-              localModels={localModels}
-              onValueChange={handleSetDefault}
-            />
-          )
+          <div className="flex items-center gap-2">
+            <AgentSelector />
+            {hasAvailableModels && (
+              <ModelSelector
+                defaultModelName={defaultModelName}
+                apiKeyModels={apiKeyModels}
+                oauthModels={oauthModels}
+                localModels={localModels}
+                onValueChange={handleSetDefault}
+              />
+            )}
+          </div>
         }
       >
         <Button

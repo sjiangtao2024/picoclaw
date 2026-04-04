@@ -1,0 +1,68 @@
+diff --git a/web/frontend/src/components/chat/chat-page.tsx b/web/frontend/src/components/chat/chat-page.tsx
+index cb1870cc..56263f1a 100644
+--- a/web/frontend/src/components/chat/chat-page.tsx
++++ b/web/frontend/src/components/chat/chat-page.tsx
+@@ -3,6 +3,7 @@ import { type ChangeEvent, useEffect, useRef, useState } from "react"
+ import { useTranslation } from "react-i18next"
+ import { toast } from "sonner"
+ 
++import { AgentSelector } from "@/components/chat/agent-selector"
+ import { AssistantMessage } from "@/components/chat/assistant-message"
+ import { ChatComposer } from "@/components/chat/chat-composer"
+ import { ChatEmptyState } from "@/components/chat/chat-empty-state"
+@@ -190,15 +191,18 @@ export function ChatPage() {
+           hasScrolled ? "shadow-xs" : "shadow-none"
+         }`}
+         titleExtra={
+-          hasAvailableModels && (
+-            <ModelSelector
+-              defaultModelName={defaultModelName}
+-              apiKeyModels={apiKeyModels}
+-              oauthModels={oauthModels}
+-              localModels={localModels}
+-              onValueChange={handleSetDefault}
+-            />
+-          )
++          <div className="flex items-center gap-2">
++            <AgentSelector />
++            {hasAvailableModels && (
++              <ModelSelector
++                defaultModelName={defaultModelName}
++                apiKeyModels={apiKeyModels}
++                oauthModels={oauthModels}
++                localModels={localModels}
++                onValueChange={handleSetDefault}
++              />
++            )}
++          </div>
+         }
+       >
+         <Button
+diff --git a/web/frontend/src/i18n/locales/en.json b/web/frontend/src/i18n/locales/en.json
+index 4931d6df..d7e54e93 100644
+--- a/web/frontend/src/i18n/locales/en.json
++++ b/web/frontend/src/i18n/locales/en.json
+@@ -52,6 +52,9 @@
+     "deleteSession": "Delete session",
+     "messagesCount": "{{count}} messages",
+     "noModel": "Select model",
++    "agent": "Select agent",
++    "defaultAgentChanged": "Default agent changed to {{name}}. Restart the gateway and new chats will use it.",
++    "defaultAgentChangeFailed": "Failed to change the default agent",
+     "attachImage": "Add images",
+     "removeImage": "Remove image",
+     "uploadedImage": "Uploaded image",
+diff --git a/web/frontend/src/i18n/locales/zh.json b/web/frontend/src/i18n/locales/zh.json
+index edaf824b..1f24f6c9 100644
+--- a/web/frontend/src/i18n/locales/zh.json
++++ b/web/frontend/src/i18n/locales/zh.json
+@@ -52,6 +52,9 @@
+     "deleteSession": "删除会话",
+     "messagesCount": "{{count}} 条消息",
+     "noModel": "选择模型",
++    "agent": "选择 Agent",
++    "defaultAgentChanged": "默认 Agent 已切换为 {{name}}，重启服务后新的会话将使用它。",
++    "defaultAgentChangeFailed": "切换默认 Agent 失败",
+     "attachImage": "添加图片",
+     "removeImage": "移除图片",
+     "uploadedImage": "已上传图片",

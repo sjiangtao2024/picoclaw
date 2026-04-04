@@ -15,10 +15,12 @@ git apply --check "$patch_dir/0001-web-config-validation.patch"
 git apply --check "$patch_dir/0002-frontend-chat-reconnect-and-polling.patch"
 git apply --check "$patch_dir/0003-pico-agent-diagnostics-and-allowlist.patch"
 git apply --check "$patch_dir/0004-skillhub-defaults-and-compat.patch"
+git apply --check "$patch_dir/0005-web-chat-default-agent-selector.patch"
 
 git apply "$patch_dir/0001-web-config-validation.patch"
 git apply "$patch_dir/0002-frontend-chat-reconnect-and-polling.patch"
 git apply "$patch_dir/0003-pico-agent-diagnostics-and-allowlist.patch"
 git apply "$patch_dir/0004-skillhub-defaults-and-compat.patch"
+git apply "$patch_dir/0005-web-chat-default-agent-selector.patch"
 
 echo "patches applied to $repo_dir"

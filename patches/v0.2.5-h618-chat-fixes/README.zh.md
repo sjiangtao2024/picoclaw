@@ -20,6 +20,7 @@
 2. `0002-frontend-chat-reconnect-and-polling.patch`
 3. `0003-pico-agent-diagnostics-and-allowlist.patch`
 4. `0004-skillhub-defaults-and-compat.patch`
+5. `0005-web-chat-default-agent-selector.patch`
 
 补丁说明：
 
@@ -59,6 +60,16 @@
 - 将用户侧 `install_skill` 参数示例改为 `skillhub`
 - 增加回归测试，锁住默认 SkillHub 配置与 Web API 的 `skillhub` URL 生成
 
+## 0005-web-chat-default-agent-selector.patch
+
+作用：
+
+- 给 Web 聊天页增加默认 Agent 选择器
+- 选择后通过 `PATCH /api/config` 更新 `agents.list[].default`
+- 仅修改“全局默认 Agent”，不强切当前正在聊天的会话
+- 切换成功后提示“重启服务后，新的会话将使用新的默认 Agent”
+- 增加前端回归测试，锁住 Agent 列表解析与默认 Agent patch 生成逻辑
+
 重要说明：
 
 - 这个补丁集只覆盖源码。
@@ -74,11 +85,13 @@ git apply --check /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-f
 git apply --check /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0002-frontend-chat-reconnect-and-polling.patch
 git apply --check /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0003-pico-agent-diagnostics-and-allowlist.patch
 git apply --check /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0004-skillhub-defaults-and-compat.patch
+git apply --check /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0005-web-chat-default-agent-selector.patch
 
 git apply /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0001-web-config-validation.patch
 git apply /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0002-frontend-chat-reconnect-and-polling.patch
 git apply /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0003-pico-agent-diagnostics-and-allowlist.patch
 git apply /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0004-skillhub-defaults-and-compat.patch
+git apply /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0005-web-chat-default-agent-selector.patch
 ```
 
 建议回归：
@@ -93,4 +106,5 @@ go test ./web/backend/api -run TestRegistrySkillURLUsesSkillHubTemplate -count=1
 node --test web/frontend/src/store/gateway.test.ts
 node --test web/frontend/src/features/chat/socket-connection.test.ts
 node --test web/frontend/src/features/chat/gateway-reconnect.test.ts
+node --test web/frontend/src/components/chat/agent-selector-utils.test.ts
 ```
