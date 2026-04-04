@@ -21,6 +21,7 @@
 3. `0003-pico-agent-diagnostics-and-allowlist.patch`
 4. `0004-skillhub-defaults-and-compat.patch`
 5. `0005-web-chat-default-agent-selector.patch`
+6. `0006-web-skills-default-agent-workspace.patch`
 
 补丁说明：
 
@@ -70,6 +71,15 @@
 - 切换成功后提示“重启服务后，新的会话将使用新的默认 Agent”
 - 增加前端回归测试，锁住 Agent 列表解析与默认 Agent patch 生成逻辑
 
+## 0006-web-skills-default-agent-workspace.patch
+
+作用：
+
+- 修复 Web skills 页面仍固定使用默认 workspace 的问题
+- `skills` 的列表、安装、删除、导入统一切到“当前默认 Agent 的 workspace”
+- 避免出现“页面安装成功，但默认 Agent 实际看不到 skill”的错位
+- 增加后端回归测试，锁住“默认 Agent workspace 优先”的行为
+
 重要说明：
 
 - 这个补丁集只覆盖源码。
@@ -86,12 +96,14 @@ git apply --check /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-f
 git apply --check /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0003-pico-agent-diagnostics-and-allowlist.patch
 git apply --check /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0004-skillhub-defaults-and-compat.patch
 git apply --check /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0005-web-chat-default-agent-selector.patch
+git apply --check /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0006-web-skills-default-agent-workspace.patch
 
 git apply /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0001-web-config-validation.patch
 git apply /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0002-frontend-chat-reconnect-and-polling.patch
 git apply /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0003-pico-agent-diagnostics-and-allowlist.patch
 git apply /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0004-skillhub-defaults-and-compat.patch
 git apply /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0005-web-chat-default-agent-selector.patch
+git apply /home/yukun/dev/picobox-ai/picoclaw/patches/v0.2.5-h618-chat-fixes/0006-web-skills-default-agent-workspace.patch
 ```
 
 建议回归：
@@ -107,4 +119,5 @@ node --test web/frontend/src/store/gateway.test.ts
 node --test web/frontend/src/features/chat/socket-connection.test.ts
 node --test web/frontend/src/features/chat/gateway-reconnect.test.ts
 node --test web/frontend/src/components/chat/agent-selector-utils.test.ts
+go test ./web/backend/api -run 'TestHandleListSkillsUsesDefaultAgentWorkspace|TestHandleInstallSkillUsesDefaultAgentWorkspace' -count=1
 ```

@@ -15,6 +15,7 @@
 - `v0.2.5-h618-chat-fixes` 是 2026-04-04 在 H618 远端排障后整理出的聊天链路修复补丁集。
 - 其中已包含 `0004-skillhub-defaults-and-compat.patch`，用于固化腾讯 SkillHub 默认接入与 `clawhub -> skillhub` 兼容回退。
 - 其中现已包含 `0005-web-chat-default-agent-selector.patch`，用于给 Web 聊天页补上“切换全局默认 Agent”的能力。
+- 其中现已包含 `0006-web-skills-default-agent-workspace.patch`，用于让 Web skills 页面跟随当前默认 Agent 的 workspace，而不是固定落到基础 workspace。
 - 以后切上游新 tag，优先从这套补丁开始评估和重放。
 - 本页下方的 `0001~0014` 仍保留，主要用于追溯历史演进过程。
 

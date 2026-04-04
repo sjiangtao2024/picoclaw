@@ -19,6 +19,7 @@ import (
 
 	"github.com/sipeed/picoclaw/pkg/config"
 	"github.com/sipeed/picoclaw/pkg/fileutil"
+	"github.com/sipeed/picoclaw/pkg/routing"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/utils"
 )
@@ -317,7 +318,7 @@ func (h *Handler) handleInstallSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	workspace := cfg.WorkspacePath()
+	workspace := defaultAgentWorkspacePath(cfg)
 	skillsRoot := filepath.Join(workspace, "skills")
 	targetDir := filepath.Join(workspace, "skills", req.Slug)
 	workspaceSkillWriteMu.Lock()
@@ -477,7 +478,7 @@ func (h *Handler) handleDeleteSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	loader := newSkillsLoader(cfg.WorkspacePath())
+	loader := newSkillsLoader(defaultAgentWorkspacePath(cfg))
 	name := r.PathValue("name")
 	workspaceSkillWriteMu.Lock()
 	defer workspaceSkillWriteMu.Unlock()
@@ -508,6 +509,34 @@ func newSkillsLoader(workspace string) *skills.SkillsLoader {
 		filepath.Join(globalConfigDir(), "skills"),
 		builtinSkillsDir(),
 	)
+}
+
+func defaultAgentWorkspacePath(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+
+	defaultWorkspace := cfg.WorkspacePath()
+	if len(cfg.Agents.List) == 0 {
+		return defaultWorkspace
+	}
+
+	selected := &cfg.Agents.List[0]
+	for i := range cfg.Agents.List {
+		if cfg.Agents.List[i].Default {
+			selected = &cfg.Agents.List[i]
+			break
+		}
+	}
+
+	if strings.TrimSpace(selected.Workspace) != "" {
+		return strings.TrimSpace(selected.Workspace)
+	}
+	if selected.Default || strings.TrimSpace(selected.ID) == "" || routing.NormalizeAgentID(selected.ID) == routing.DefaultAgentID {
+		return defaultWorkspace
+	}
+
+	return filepath.Join(defaultWorkspace, "..", "workspace-"+routing.NormalizeAgentID(selected.ID))
 }
 
 func newSkillsRegistryManager(cfg *config.Config) *skills.RegistryManager {
@@ -551,7 +580,7 @@ func ensureSkillRegistryToolEnabled(cfg *config.Config, toolName string) error {
 }
 
 func buildSkillSupportItems(cfg *config.Config) ([]skillSupportItem, error) {
-	rawSkills := newSkillsLoader(cfg.WorkspacePath()).ListSkills()
+	rawSkills := newSkillsLoader(defaultAgentWorkspacePath(cfg)).ListSkills()
 	items := make([]skillSupportItem, 0, len(rawSkills))
 	for _, skill := range rawSkills {
 		item, err := enrichSkillInfo(cfg, skill)
@@ -863,7 +892,7 @@ func importUploadedMarkdownSkill(cfg *config.Config, filename string, content []
 	}
 
 	normalizedContent := normalizeImportedSkillContent(content, skillName)
-	workspace := cfg.WorkspacePath()
+	workspace := defaultAgentWorkspacePath(cfg)
 	skillDir := filepath.Join(workspace, "skills", skillName)
 	skillFile := filepath.Join(skillDir, "SKILL.md")
 
@@ -918,7 +947,7 @@ func importUploadedSkillArchive(cfg *config.Config, filename string, content []b
 		return nil, http.StatusBadRequest, err
 	}
 
-	workspace := cfg.WorkspacePath()
+	workspace := defaultAgentWorkspacePath(cfg)
 	skillDir := filepath.Join(workspace, "skills", skillName)
 	if err := ensureWorkspaceSkillDoesNotExist(skillDir); err != nil {
 		return nil, statusCodeForImportedSkillWriteError(err), err

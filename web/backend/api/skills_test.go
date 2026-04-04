@@ -128,6 +128,81 @@ func TestHandleListSkills(t *testing.T) {
 	}
 }
 
+func TestHandleListSkillsUsesDefaultAgentWorkspace(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() error = %v", err)
+	}
+
+	baseWorkspace := filepath.Join(t.TempDir(), "workspace")
+	defaultAgentWorkspace := filepath.Join(t.TempDir(), "workspace-dayahuan")
+	cfg.Agents.Defaults.Workspace = baseWorkspace
+	cfg.Agents.List = []config.AgentConfig{
+		{
+			ID:        "dayahuan",
+			Default:   true,
+			Name:      "大丫鬟",
+			Workspace: defaultAgentWorkspace,
+		},
+	}
+	if err := config.SaveConfig(configPath, cfg); err != nil {
+		t.Fatalf("SaveConfig() error = %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(baseWorkspace, "skills", "base-skill"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(base skill) error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(baseWorkspace, "skills", "base-skill", "SKILL.md"),
+		[]byte("---\nname: base-skill\ndescription: Base workspace skill\n---\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(base skill) error = %v", err)
+	}
+
+	if err := os.MkdirAll(filepath.Join(defaultAgentWorkspace, "skills", "agent-skill"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(agent skill) error = %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(defaultAgentWorkspace, "skills", "agent-skill", "SKILL.md"),
+		[]byte("---\nname: agent-skill\ndescription: Default agent workspace skill\n---\n"),
+		0o644,
+	); err != nil {
+		t.Fatalf("WriteFile(agent skill) error = %v", err)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/skills", nil)
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var resp skillSupportResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	gotSkills := make(map[string]string, len(resp.Skills))
+	for _, skill := range resp.Skills {
+		gotSkills[skill.Name] = skill.Source
+	}
+	if gotSkills["agent-skill"] != "workspace" {
+		t.Fatalf("agent-skill source = %q, want workspace", gotSkills["agent-skill"])
+	}
+	if _, ok := gotSkills["base-skill"]; ok {
+		t.Fatalf("base-skill should not be listed when default agent workspace is active, got %#v", gotSkills)
+	}
+}
+
 func TestRegistrySkillURLUsesSkillHubTemplate(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Tools.Skills.Registries.SkillHub.PrimaryDownloadURLTemplate = "https://lightmake.site/api/v1/download?slug={slug}"
@@ -933,6 +1008,100 @@ func TestHandleInstallSkill(t *testing.T) {
 	}
 	if !searchResp.Results[0].Installed || searchResp.Results[0].InstalledName != "github" {
 		t.Fatalf("search result should be treated as installed after registry install, got %#v", searchResp.Results[0])
+	}
+}
+
+func TestHandleInstallSkillUsesDefaultAgentWorkspace(t *testing.T) {
+	configPath, cleanup := setupOAuthTestEnv(t)
+	defer cleanup()
+
+	cfg, loadErr := config.LoadConfig(configPath)
+	if loadErr != nil {
+		t.Fatalf("LoadConfig() error = %v", loadErr)
+	}
+	baseWorkspace := filepath.Join(t.TempDir(), "workspace")
+	defaultAgentWorkspace := filepath.Join(t.TempDir(), "workspace-dayahuan")
+	cfg.Agents.Defaults.Workspace = baseWorkspace
+	cfg.Agents.List = []config.AgentConfig{
+		{
+			ID:        "dayahuan",
+			Default:   true,
+			Name:      "大丫鬟",
+			Workspace: defaultAgentWorkspace,
+		},
+	}
+
+	zipContent := buildSkillZip(t, map[string]string{
+		"SKILL.md": "---\nname: github\ndescription: GitHub registry skill\n---\n# GitHub\n\nUse this skill.\n",
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/search":
+			json.NewEncoder(w).Encode(map[string]any{
+				"results": []map[string]any{
+					{
+						"score":       0.95,
+						"slug":        "github",
+						"displayName": "GitHub",
+						"summary":     "GitHub registry skill",
+						"version":     "1.2.3",
+					},
+				},
+			})
+		case "/api/v1/skills/github":
+			json.NewEncoder(w).Encode(map[string]any{
+				"slug":        "github",
+				"displayName": "GitHub",
+				"summary":     "GitHub registry skill",
+				"latestVersion": map[string]any{
+					"version": "1.2.3",
+				},
+				"moderation": map[string]any{
+					"isMalwareBlocked": false,
+					"isSuspicious":     false,
+				},
+			})
+		case "/api/v1/download":
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(zipContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	cfg.Tools.Skills.Registries.ClawHub.BaseURL = server.URL
+	if saveErr := config.SaveConfig(configPath, cfg); saveErr != nil {
+		t.Fatalf("SaveConfig() error = %v", saveErr)
+	}
+
+	h := NewHandler(configPath)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	body, err := json.Marshal(installSkillRequest{
+		Slug:     "github",
+		Registry: "clawhub",
+	})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/skills/install", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	if _, err := os.Stat(filepath.Join(defaultAgentWorkspace, "skills", "github", "SKILL.md")); err != nil {
+		t.Fatalf("installed skill file missing in default agent workspace: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(baseWorkspace, "skills", "github", "SKILL.md")); !os.IsNotExist(err) {
+		t.Fatalf("skill should not be installed into base workspace, stat err=%v", err)
 	}
 }
 
