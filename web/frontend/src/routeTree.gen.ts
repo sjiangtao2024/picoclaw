@@ -19,6 +19,7 @@ import { Route as ChannelsRouteRouteImport } from './routes/channels/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConfigRawRouteImport } from './routes/config.raw'
 import { Route as ChannelsNameRouteImport } from './routes/channels/$name'
+import { Route as AgentWebSearchRouteImport } from './routes/agent/web-search'
 import { Route as AgentToolsRouteImport } from './routes/agent/tools'
 import { Route as AgentSkillsRouteImport } from './routes/agent/skills'
 import { Route as AgentHubRouteImport } from './routes/agent/hub'
@@ -73,6 +74,11 @@ const ChannelsNameRoute = ChannelsNameRouteImport.update({
   path: '/$name',
   getParentRoute: () => ChannelsRouteRoute,
 } as any)
+const AgentWebSearchRoute = AgentWebSearchRouteImport.update({
+  id: '/web-search',
+  path: '/web-search',
+  getParentRoute: () => AgentRoute,
+} as any)
 const AgentToolsRoute = AgentToolsRouteImport.update({
   id: '/tools',
   path: '/tools',
@@ -101,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/agent/hub': typeof AgentHubRoute
   '/agent/skills': typeof AgentSkillsRoute
   '/agent/tools': typeof AgentToolsRoute
+  '/agent/web-search': typeof AgentWebSearchRoute
   '/channels/$name': typeof ChannelsNameRoute
   '/config/raw': typeof ConfigRawRoute
 }
@@ -116,6 +123,7 @@ export interface FileRoutesByTo {
   '/agent/hub': typeof AgentHubRoute
   '/agent/skills': typeof AgentSkillsRoute
   '/agent/tools': typeof AgentToolsRoute
+  '/agent/web-search': typeof AgentWebSearchRoute
   '/channels/$name': typeof ChannelsNameRoute
   '/config/raw': typeof ConfigRawRoute
 }
@@ -132,6 +140,7 @@ export interface FileRoutesById {
   '/agent/hub': typeof AgentHubRoute
   '/agent/skills': typeof AgentSkillsRoute
   '/agent/tools': typeof AgentToolsRoute
+  '/agent/web-search': typeof AgentWebSearchRoute
   '/channels/$name': typeof ChannelsNameRoute
   '/config/raw': typeof ConfigRawRoute
 }
@@ -149,6 +158,7 @@ export interface FileRouteTypes {
     | '/agent/hub'
     | '/agent/skills'
     | '/agent/tools'
+    | '/agent/web-search'
     | '/channels/$name'
     | '/config/raw'
   fileRoutesByTo: FileRoutesByTo
@@ -164,6 +174,7 @@ export interface FileRouteTypes {
     | '/agent/hub'
     | '/agent/skills'
     | '/agent/tools'
+    | '/agent/web-search'
     | '/channels/$name'
     | '/config/raw'
   id:
@@ -179,6 +190,7 @@ export interface FileRouteTypes {
     | '/agent/hub'
     | '/agent/skills'
     | '/agent/tools'
+    | '/agent/web-search'
     | '/channels/$name'
     | '/config/raw'
   fileRoutesById: FileRoutesById
@@ -266,6 +278,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChannelsNameRouteImport
       parentRoute: typeof ChannelsRouteRoute
     }
+    '/agent/web-search': {
+      id: '/agent/web-search'
+      path: '/web-search'
+      fullPath: '/agent/web-search'
+      preLoaderRoute: typeof AgentWebSearchRouteImport
+      parentRoute: typeof AgentRoute
+    }
     '/agent/tools': {
       id: '/agent/tools'
       path: '/tools'
@@ -306,12 +325,14 @@ interface AgentRouteChildren {
   AgentHubRoute: typeof AgentHubRoute
   AgentSkillsRoute: typeof AgentSkillsRoute
   AgentToolsRoute: typeof AgentToolsRoute
+  AgentWebSearchRoute: typeof AgentWebSearchRoute
 }
 
 const AgentRouteChildren: AgentRouteChildren = {
   AgentHubRoute: AgentHubRoute,
   AgentSkillsRoute: AgentSkillsRoute,
   AgentToolsRoute: AgentToolsRoute,
+  AgentWebSearchRoute: AgentWebSearchRoute,
 }
 
 const AgentRouteWithChildren = AgentRoute._addFileChildren(AgentRouteChildren)
