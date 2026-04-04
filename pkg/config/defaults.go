@@ -440,8 +440,8 @@ func DefaultConfig() *Config {
 					},
 					SkillHub: SkillHubRegistryConfig{
 						Enabled:                    true,
-						SearchURL:                  "https://lightmake.site/api/v1/search",
-						PrimaryDownloadURLTemplate: "https://lightmake.site/api/v1/download?slug={slug}",
+						SearchURL:                  "https://skillhub.tencent.com/api/v1/search",
+						PrimaryDownloadURLTemplate: "https://skillhub.tencent.com/api/v1/download?slug={slug}",
 						DownloadURLTemplate:        "https://skillhub-1388575217.cos.ap-guangzhou.myqcloud.com/skills/{slug}.zip",
 					},
 				},
