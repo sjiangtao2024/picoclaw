@@ -1,0 +1,282 @@
+diff --git a/pkg/tools/modelscope_image.go b/pkg/tools/modelscope_image.go
+new file mode 100644
+index 00000000..23ffcaa4
+--- /dev/null
++++ b/pkg/tools/modelscope_image.go
+@@ -0,0 +1,171 @@
++package tools
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"strings"
++	"time"
++)
++
++type ModelScopeImageToolOptions struct {
++	Enabled        bool
++	BaseURL        string
++	TimeoutSeconds int
++	DefaultSize    string
++	HTTPClient     *http.Client
++}
++
++type ModelScopeImageTool struct {
++	baseURL     string
++	defaultSize string
++	httpClient  *http.Client
++}
++
++type modelScopeImageResponse struct {
++	Created int64 `json:"created,omitempty"`
++	Data    []struct {
++		URL           string `json:"url,omitempty"`
++		RevisedPrompt string `json:"revised_prompt,omitempty"`
++		LocalPath     string `json:"local_path,omitempty"`
++		MetaPath      string `json:"meta_path,omitempty"`
++	} `json:"data"`
++}
++
++func NewModelScopeImageTool(opts ModelScopeImageToolOptions) *ModelScopeImageTool {
++	if !opts.Enabled || strings.TrimSpace(opts.BaseURL) == "" {
++		return nil
++	}
++
++	timeout := time.Duration(opts.TimeoutSeconds) * time.Second
++	if timeout <= 0 {
++		timeout = 300 * time.Second
++	}
++
++	client := opts.HTTPClient
++	if client == nil {
++		client = &http.Client{Timeout: timeout}
++	}
++
++	defaultSize := strings.TrimSpace(opts.DefaultSize)
++	if defaultSize == "" {
++		defaultSize = "1024x1024"
++	}
++
++	return &ModelScopeImageTool{
++		baseURL:     strings.TrimRight(strings.TrimSpace(opts.BaseURL), "/"),
++		defaultSize: defaultSize,
++		httpClient:  client,
++	}
++}
++
++func (t *ModelScopeImageTool) Name() string {
++	return "modelscope-image"
++}
++
++func (t *ModelScopeImageTool) Description() string {
++	return "Generate images through the local ModelScope image service."
++}
++
++func (t *ModelScopeImageTool) Parameters() map[string]any {
++	return map[string]any{
++		"type":                 "object",
++		"additionalProperties": false,
++		"properties": map[string]any{
++			"prompt": map[string]any{
++				"type":        "string",
++				"description": "Prompt used to generate the image.",
++			},
++			"n": map[string]any{
++				"type":        "number",
++				"description": "Number of images to generate. Defaults to 1.",
++				"minimum":     1,
++				"maximum":     4,
++			},
++			"size": map[string]any{
++				"type":        "string",
++				"description": "Requested image size, for example 1024x1024.",
++			},
++		},
++		"required": []string{"prompt"},
++	}
++}
++
++func (t *ModelScopeImageTool) Execute(ctx context.Context, args map[string]any) *ToolResult {
++	prompt, _ := args["prompt"].(string)
++	prompt = strings.TrimSpace(prompt)
++	if prompt == "" {
++		return ErrorResult("prompt is required")
++	}
++
++	n := 1
++	switch value := args["n"].(type) {
++	case float64:
++		if value > 0 {
++			n = int(value)
++		}
++	case int:
++		if value > 0 {
++			n = value
++		}
++	}
++
++	size, _ := args["size"].(string)
++	size = strings.TrimSpace(size)
++	if size == "" {
++		size = t.defaultSize
++	}
++
++	payload, err := json.Marshal(map[string]any{
++		"prompt":          prompt,
++		"n":               n,
++		"size":            size,
++		"response_format": "url",
++	})
++	if err != nil {
++		return ErrorResult("marshal request failed").WithError(err)
++	}
++
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.baseURL+"/v1/images/generations", bytes.NewReader(payload))
++	if err != nil {
++		return ErrorResult("build request failed").WithError(err)
++	}
++	req.Header.Set("Content-Type", "application/json")
++
++	resp, err := t.httpClient.Do(req)
++	if err != nil {
++		return ErrorResult(fmt.Sprintf("modelscope-image request failed: %v", err)).WithError(err)
++	}
++	defer resp.Body.Close()
++
++	body, err := io.ReadAll(resp.Body)
++	if err != nil {
++		return ErrorResult("read response failed").WithError(err)
++	}
++	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
++		return ErrorResult(fmt.Sprintf("modelscope-image api error (status %d): %s", resp.StatusCode, strings.TrimSpace(string(body))))
++	}
++
++	var parsed modelScopeImageResponse
++	if err := json.Unmarshal(body, &parsed); err != nil {
++		return ErrorResult("parse response failed").WithError(err)
++	}
++
++	llmJSON, err := json.MarshalIndent(parsed, "", "  ")
++	if err != nil {
++		return ErrorResult("marshal result failed").WithError(err)
++	}
++
++	userMsg := fmt.Sprintf("已生成 %d 张图片", len(parsed.Data))
++	if size != "" {
++		userMsg += fmt.Sprintf("，尺寸 %s", size)
++	}
++
++	return &ToolResult{
++		ForLLM:  string(llmJSON),
++		ForUser: userMsg,
++	}
++}
+diff --git a/pkg/tools/modelscope_image_test.go b/pkg/tools/modelscope_image_test.go
+new file mode 100644
+index 00000000..30d50a01
+--- /dev/null
++++ b/pkg/tools/modelscope_image_test.go
+@@ -0,0 +1,99 @@
++package tools
++
++import (
++	"context"
++	"encoding/json"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++)
++
++func TestModelScopeImageToolReturnsNilWhenDisabled(t *testing.T) {
++	tool := NewModelScopeImageTool(ModelScopeImageToolOptions{
++		Enabled: false,
++		BaseURL: "http://127.0.0.1:8010",
++	})
++	if tool != nil {
++		t.Fatal("expected nil tool when disabled")
++	}
++}
++
++func TestModelScopeImageToolRejectsMissingPrompt(t *testing.T) {
++	tool := NewModelScopeImageTool(ModelScopeImageToolOptions{
++		Enabled:        true,
++		BaseURL:        "http://127.0.0.1:8010",
++		TimeoutSeconds: 30,
++	})
++	if tool == nil {
++		t.Fatal("expected tool")
++	}
++
++	result := tool.Execute(context.Background(), map[string]any{})
++	if !result.IsError {
++		t.Fatal("expected error result")
++	}
++	if !strings.Contains(result.ForLLM, "prompt is required") {
++		t.Fatalf("unexpected error: %s", result.ForLLM)
++	}
++}
++
++func TestModelScopeImageToolExecuteSuccess(t *testing.T) {
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.URL.Path != "/v1/images/generations" {
++			t.Fatalf("path = %s, want /v1/images/generations", r.URL.Path)
++		}
++		if r.Method != http.MethodPost {
++			t.Fatalf("method = %s, want POST", r.Method)
++		}
++
++		var req map[string]any
++		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
++			t.Fatalf("decode request: %v", err)
++		}
++		if req["prompt"] != "画一只橘猫" {
++			t.Fatalf("prompt = %v, want 画一只橘猫", req["prompt"])
++		}
++		if req["size"] != "1024x1024" {
++			t.Fatalf("size = %v, want 1024x1024", req["size"])
++		}
++
++		w.Header().Set("Content-Type", "application/json")
++		_ = json.NewEncoder(w).Encode(map[string]any{
++			"created": 1712000000,
++			"data": []map[string]any{
++				{
++					"url":            "http://127.0.0.1:8010/v1/images/files/cat.png",
++					"local_path":     "/root/picoclaw-plugins/modelscope-image/data/images/cat.png",
++					"meta_path":      "/root/picoclaw-plugins/modelscope-image/data/meta/images/cat.json",
++					"revised_prompt": "一只橘猫",
++				},
++			},
++		})
++	}))
++	defer server.Close()
++
++	tool := NewModelScopeImageTool(ModelScopeImageToolOptions{
++		Enabled:        true,
++		BaseURL:        server.URL,
++		TimeoutSeconds: 30,
++		DefaultSize:    "1024x1024",
++	})
++	if tool == nil {
++		t.Fatal("expected tool")
++	}
++
++	result := tool.Execute(context.Background(), map[string]any{
++		"prompt": "画一只橘猫",
++		"n":      1,
++	})
++	if result.IsError {
++		t.Fatalf("unexpected error: %s", result.ForLLM)
++	}
++	if !strings.Contains(result.ForLLM, "cat.png") {
++		t.Fatalf("unexpected llm result: %s", result.ForLLM)
++	}
++	if !strings.Contains(result.ForUser, "已生成 1 张图片") {
++		t.Fatalf("unexpected user result: %s", result.ForUser)
++	}
++}

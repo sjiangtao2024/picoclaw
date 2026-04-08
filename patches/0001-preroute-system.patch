@@ -1,0 +1,784 @@
+diff --git a/pkg/preroute/types.go b/pkg/preroute/types.go
+new file mode 100644
+index 00000000..fa0f861d
+--- /dev/null
++++ b/pkg/preroute/types.go
+@@ -0,0 +1,26 @@
++package preroute
++
++import "context"
++
++type Context struct {
++	Channel    string
++	ChatID     string
++	AgentID    string
++	Workspace  string
++	Query      string
++	QuotedText string
++	MediaRefs  []string
++	Metadata   map[string]string
++}
++
++type Result struct {
++	Handled   bool
++	Text      string
++	MediaRefs []string
++	RouteID   string
++}
++
++type Route interface {
++	ID() string
++	Handle(ctx context.Context, rc Context) (Result, error)
++}
+diff --git a/pkg/preroute/router.go b/pkg/preroute/router.go
+new file mode 100644
+index 00000000..5c59bb69
+--- /dev/null
++++ b/pkg/preroute/router.go
+@@ -0,0 +1,30 @@
++package preroute
++
++import "context"
++
++type Router struct {
++	routes []Route
++}
++
++func NewRouter(routes []Route) *Router {
++	return &Router{routes: append([]Route(nil), routes...)}
++}
++
++func (r *Router) Route(ctx context.Context, rc Context) (Result, error) {
++	if r == nil {
++		return Result{}, nil
++	}
++	for _, route := range r.routes {
++		result, err := route.Handle(ctx, rc)
++		if err != nil {
++			return Result{}, err
++		}
++		if result.Handled {
++			if result.RouteID == "" {
++				result.RouteID = route.ID()
++			}
++			return result, nil
++		}
++	}
++	return Result{}, nil
++}
+diff --git a/pkg/preroute/router_test.go b/pkg/preroute/router_test.go
+new file mode 100644
+index 00000000..9f529b60
+--- /dev/null
++++ b/pkg/preroute/router_test.go
+@@ -0,0 +1,39 @@
++package preroute
++
++import (
++	"context"
++	"testing"
++)
++
++type testRoute struct {
++	id     string
++	result Result
++}
++
++func (r testRoute) ID() string { return r.id }
++
++func (r testRoute) Handle(context.Context, Context) (Result, error) {
++	return r.result, nil
++}
++
++func TestRouterReturnsFirstHandledResult(t *testing.T) {
++	router := NewRouter([]Route{
++		testRoute{id: "skip", result: Result{}},
++		testRoute{id: "help", result: Result{Handled: true, Text: "forced help", RouteID: "help"}},
++		testRoute{id: "later", result: Result{Handled: true, Text: "later", RouteID: "later"}},
++	})
++
++	got, err := router.Route(context.Background(), Context{Query: "帮助"})
++	if err != nil {
++		t.Fatalf("Route() error = %v", err)
++	}
++	if !got.Handled {
++		t.Fatal("expected handled result")
++	}
++	if got.RouteID != "help" {
++		t.Fatalf("RouteID = %q, want help", got.RouteID)
++	}
++	if got.Text != "forced help" {
++		t.Fatalf("Text = %q, want forced help", got.Text)
++	}
++}
+diff --git a/pkg/preroute/executors/news.go b/pkg/preroute/executors/news.go
+new file mode 100644
+index 00000000..c2ae4289
+--- /dev/null
++++ b/pkg/preroute/executors/news.go
+@@ -0,0 +1,193 @@
++package executors
++
++import (
++	"bytes"
++	"context"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"regexp"
++	"strings"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/preroute"
++)
++
++var (
++	tencentNewsPrefixRE = regexp.MustCompile(`^腾讯新闻(?:\s*[:：]\s*|\s*)([\s\S]*)$`)
++	newsHelpRE          = regexp.MustCompile(`^(新闻帮助|腾讯新闻帮助|腾讯新闻功能帮助)$`)
++	hotNewsRE           = regexp.MustCompile(`^(热点|热点新闻|热榜)$`)
++	morningNewsRE       = regexp.MustCompile(`^(早报|今日早报)$`)
++	eveningNewsRE       = regexp.MustCompile(`^(晚报|今日晚报)$`)
++	todayNewsRE         = regexp.MustCompile(`^(今日新闻|今天新闻|今天的新闻|今日的新闻|新闻简报|今天有什么新闻|今天都有什么新闻|今天有哪些新闻)$`)
++	aiNewsRE            = regexp.MustCompile(`^(AI新闻|AI日报|AI资讯)$`)
++)
++
++const DefaultTencentNewsCLIRelativePath = "skills/tencent-news/tencent-news-cli"
++
++const DefaultNewsHelpText = `腾讯新闻支持示例：
++- 腾讯新闻 热点
++- 腾讯新闻 早报
++- 腾讯新闻 晚报
++- 今日新闻
++- AI新闻`
++
++type TencentNewsCLIExecutor struct {
++	RelativePath string
++	Now          func() time.Time
++}
++
++func ResolveTencentNewsCLIPath(workspace, relativePath string) (string, bool) {
++	workspace = strings.TrimSpace(workspace)
++	relativePath = strings.TrimSpace(relativePath)
++	if workspace == "" || relativePath == "" {
++		return "", false
++	}
++	path := filepath.Join(workspace, filepath.FromSlash(relativePath))
++	info, err := os.Stat(path)
++	if err != nil || info.IsDir() {
++		return "", false
++	}
++	return path, true
++}
++
++func (e TencentNewsCLIExecutor) Execute(ctx context.Context, rc preroute.Context) (string, bool, error) {
++	query := strings.TrimSpace(rc.Query)
++	if query == "" {
++		return "", false, nil
++	}
++	if newsHelpRE.MatchString(query) {
++		return DefaultNewsHelpText, true, nil
++	}
++	args, ok := buildTencentNewsCLIArgs(query, nowFunc(e.Now))
++	if !ok {
++		return "", false, nil
++	}
++	rel := strings.TrimSpace(e.RelativePath)
++	if rel == "" {
++		rel = DefaultTencentNewsCLIRelativePath
++	}
++	cliPath, found := ResolveTencentNewsCLIPath(rc.Workspace, rel)
++	if !found {
++		return "", false, nil
++	}
++
++	cmd, cleanup, err := buildTencentNewsCommand(ctx, cliPath, args, userHomeDir())
++	if err != nil {
++		return "", true, err
++	}
++	if cleanup != nil {
++		defer cleanup()
++	}
++	var stdout bytes.Buffer
++	var stderr bytes.Buffer
++	cmd.Stdout = &stdout
++	cmd.Stderr = &stderr
++	if err := cmd.Run(); err != nil {
++		msg := strings.TrimSpace(stderr.String())
++		if msg == "" {
++			msg = strings.TrimSpace(stdout.String())
++		}
++		if msg == "" {
++			msg = err.Error()
++		}
++		return "", true, fmt.Errorf("tencent-news-cli failed: %s", msg)
++	}
++	text := strings.TrimSpace(stdout.String())
++	if text == "" {
++		return "腾讯新闻暂无可返回内容。", true, nil
++	}
++	return text, true, nil
++}
++
++func buildTencentNewsCLIArgs(query string, now time.Time) ([]string, bool) {
++	trimmed := strings.TrimSpace(query)
++	explicitBody := trimmed
++	if match := tencentNewsPrefixRE.FindStringSubmatch(trimmed); len(match) > 1 {
++		explicitBody = strings.TrimSpace(match[1])
++		if explicitBody == "" {
++			explicitBody = "热点"
++		}
++	}
++	switch {
++	case hotNewsRE.MatchString(explicitBody):
++		return []string{"hot"}, true
++	case morningNewsRE.MatchString(explicitBody):
++		return []string{"morning"}, true
++	case eveningNewsRE.MatchString(explicitBody):
++		return []string{"evening"}, true
++	case todayNewsRE.MatchString(explicitBody):
++		if now.Hour() >= 18 {
++			return []string{"evening"}, true
++		}
++		return []string{"morning"}, true
++	case aiNewsRE.MatchString(explicitBody):
++		return []string{"ai-daily", "--query", "AI"}, true
++	case strings.HasPrefix(explicitBody, "AI新闻 "):
++		return []string{"ai-daily", "--query", strings.TrimSpace(strings.TrimPrefix(explicitBody, "AI新闻 "))}, true
++	case strings.HasPrefix(trimmed, "腾讯新闻"):
++		return []string{"ai-daily", "--query", explicitBody}, true
++	default:
++		return nil, false
++	}
++}
++
++func nowFunc(fn func() time.Time) time.Time {
++	if fn != nil {
++		return fn()
++	}
++	return time.Now()
++}
++
++func resolveTencentNewsAPIKey(getenv func(string) string, home string) string {
++	if getenv != nil {
++		if key := strings.TrimSpace(getenv("TENCENT_NEWS_APIKEY")); key != "" {
++			return key
++		}
++	}
++	if strings.TrimSpace(home) == "" {
++		return ""
++	}
++	for _, candidate := range []string{".bashrc", ".profile"} {
++		data, err := os.ReadFile(filepath.Join(home, candidate))
++		if err != nil {
++			continue
++		}
++		re := regexp.MustCompile(`(?m)^\s*export\s+TENCENT_NEWS_APIKEY=(?:"([^"]+)"|([^\s#]+))\s*$`)
++		match := re.FindStringSubmatch(string(data))
++		if len(match) < 3 {
++			continue
++		}
++		if strings.TrimSpace(match[1]) != "" {
++			return strings.TrimSpace(match[1])
++		}
++		if strings.TrimSpace(match[2]) != "" {
++			return strings.TrimSpace(match[2])
++		}
++	}
++	return ""
++}
++
++func userHomeDir() string {
++	if home := strings.TrimSpace(os.Getenv("HOME")); home != "" {
++		return home
++	}
++	home, _ := os.UserHomeDir()
++	return home
++}
++
++func buildTencentNewsCommand(
++	ctx context.Context,
++	cliPath string,
++	args []string,
++	home string,
++) (*exec.Cmd, func(), error) {
++	cmd := exec.CommandContext(ctx, cliPath, args...)
++	cmd.Env = os.Environ()
++	// Ensure HOME=/root so the CLI can read the API key from ~/.bashrc
++	if home != "" {
++		cmd.Env = append(cmd.Env, "HOME="+home)
++	}
++	return cmd, nil, nil
++}
+diff --git a/pkg/preroute/executors/news_test.go b/pkg/preroute/executors/news_test.go
+new file mode 100644
+index 00000000..5c84665d
+--- /dev/null
++++ b/pkg/preroute/executors/news_test.go
+@@ -0,0 +1,52 @@
++package executors
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++)
++
++func TestResolveTencentNewsCLIPathPrefersWorkspaceSkillBinary(t *testing.T) {
++	workspace := t.TempDir()
++	cliPath := filepath.Join(workspace, "skills", "tencent-news", "tencent-news-cli")
++	if err := os.MkdirAll(filepath.Dir(cliPath), 0o755); err != nil {
++		t.Fatalf("MkdirAll() error = %v", err)
++	}
++	if err := os.WriteFile(cliPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
++		t.Fatalf("WriteFile() error = %v", err)
++	}
++
++	got, ok := ResolveTencentNewsCLIPath(workspace, "skills/tencent-news/tencent-news-cli")
++	if !ok {
++		t.Fatal("expected CLI path to resolve")
++	}
++	if got != cliPath {
++		t.Fatalf("ResolveTencentNewsCLIPath() = %q, want %q", got, cliPath)
++	}
++}
++
++func TestResolveTencentNewsAPIKeyFromBashrc(t *testing.T) {
++	home := t.TempDir()
++	bashrc := filepath.Join(home, ".bashrc")
++	if err := os.WriteFile(bashrc, []byte("export TENCENT_NEWS_APIKEY=\"abc-123\"\n"), 0o644); err != nil {
++		t.Fatalf("WriteFile() error = %v", err)
++	}
++
++	got := resolveTencentNewsAPIKey(func(string) string { return "" }, home)
++	if got != "abc-123" {
++		t.Fatalf("resolveTencentNewsAPIKey() = %q, want abc-123", got)
++	}
++}
++
++func TestResolveTencentNewsAPIKeyFromProfile(t *testing.T) {
++	home := t.TempDir()
++	profile := filepath.Join(home, ".profile")
++	if err := os.WriteFile(profile, []byte("export TENCENT_NEWS_APIKEY=\"xyz-789\"\n"), 0o644); err != nil {
++		t.Fatalf("WriteFile() error = %v", err)
++	}
++
++	got := resolveTencentNewsAPIKey(func(string) string { return "" }, home)
++	if got != "xyz-789" {
++		t.Fatalf("resolveTencentNewsAPIKey() = %q, want xyz-789", got)
++	}
++}
+diff --git a/pkg/preroute/executors/image.go b/pkg/preroute/executors/image.go
+new file mode 100644
+index 00000000..6d6e43df
+--- /dev/null
++++ b/pkg/preroute/executors/image.go
+@@ -0,0 +1,48 @@
++package executors
++
++import (
++	"context"
++	"strings"
++
++	"github.com/sipeed/picoclaw/pkg/preroute"
++	"github.com/sipeed/picoclaw/pkg/tools"
++)
++
++type ModelScopeImageTool interface {
++	Execute(ctx context.Context, args map[string]any) *tools.ToolResult
++}
++
++type ModelScopeImageExecutor struct {
++	Tool ModelScopeImageTool
++}
++
++func (e ModelScopeImageExecutor) Execute(ctx context.Context, rc preroute.Context) (preroute.Result, error) {
++	query := strings.TrimSpace(rc.Query)
++	switch {
++	case strings.HasPrefix(query, "生图 "), strings.HasPrefix(query, "阿里生图 "):
++		prompt := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(query, "阿里生图"), "生图"))
++		if prompt == "" {
++			return preroute.Result{Handled: true, Text: "请在“生图”后面补充你想生成的画面描述。", RouteID: "image"}, nil
++		}
++		if e.Tool == nil {
++			return preroute.Result{}, nil
++		}
++		result := e.Tool.Execute(ctx, map[string]any{"prompt": prompt})
++		if result == nil {
++			return preroute.Result{Handled: true, Text: "图片生成失败：工具未返回结果。", RouteID: "image"}, nil
++		}
++		return preroute.Result{
++			Handled:   true,
++			Text:      strings.TrimSpace(result.ForUser),
++			MediaRefs: append([]string(nil), result.Media...),
++			RouteID:   "image",
++		}, nil
++	case strings.HasPrefix(query, "改图 "), strings.HasPrefix(query, "阿里改图 "):
++		if len(rc.MediaRefs) == 0 {
++			return preroute.Result{Handled: true, Text: "请先回复一张图片，再发送“改图 ...”或“阿里改图 ...”。", RouteID: "image"}, nil
++		}
++		return preroute.Result{Handled: true, Text: "当前版本暂未在 forced-routes 中启用改图，请继续使用现有对话流程。", RouteID: "image"}, nil
++	default:
++		return preroute.Result{}, nil
++	}
++}
+diff --git a/pkg/preroute/routes/help.go b/pkg/preroute/routes/help.go
+new file mode 100644
+index 00000000..d2764757
+--- /dev/null
++++ b/pkg/preroute/routes/help.go
+@@ -0,0 +1,48 @@
++package routes
++
++import (
++	"context"
++	"regexp"
++	"strings"
++
++	"github.com/sipeed/picoclaw/pkg/preroute"
++)
++
++var globalHelpRE = regexp.MustCompile(`^(功能帮助|帮助|你会什么|你能做什么|菜单|功能菜单|能力介绍|我现在有哪些功能|有哪些功能|全部功能|能力清单)$`)
++
++const DefaultHelpText = `当前可用的系统功能：
++
++1. 图片
++- 生图
++- 改图
++
++2. 新闻
++- 腾讯新闻 热点
++- 今日新闻
++- AI新闻
++`
++
++type helpRoute struct {
++	text string
++}
++
++func NewHelp(text string) preroute.Route {
++	trimmed := strings.TrimSpace(text)
++	if trimmed == "" {
++		trimmed = DefaultHelpText
++	}
++	return helpRoute{text: trimmed}
++}
++
++func (r helpRoute) ID() string { return "help" }
++
++func (r helpRoute) Handle(_ context.Context, rc preroute.Context) (preroute.Result, error) {
++	if !globalHelpRE.MatchString(strings.TrimSpace(rc.Query)) {
++		return preroute.Result{}, nil
++	}
++	return preroute.Result{
++		Handled: true,
++		Text:    r.text,
++		RouteID: r.ID(),
++	}, nil
++}
+diff --git a/pkg/preroute/routes/help_test.go b/pkg/preroute/routes/help_test.go
+new file mode 100644
+index 00000000..ccbf8b48
+--- /dev/null
++++ b/pkg/preroute/routes/help_test.go
+@@ -0,0 +1,26 @@
++package routes
++
++import (
++	"context"
++	"testing"
++
++	"github.com/sipeed/picoclaw/pkg/preroute"
++)
++
++func TestHelpRouteHandlesGlobalHelpIntent(t *testing.T) {
++	route := NewHelp("当前可用功能")
++
++	got, err := route.Handle(context.Background(), preroute.Context{Query: "帮助"})
++	if err != nil {
++		t.Fatalf("Handle() error = %v", err)
++	}
++	if !got.Handled {
++		t.Fatal("expected help route to handle query")
++	}
++	if got.RouteID != "help" {
++		t.Fatalf("RouteID = %q, want help", got.RouteID)
++	}
++	if got.Text != "当前可用功能" {
++		t.Fatalf("Text = %q, want configured help text", got.Text)
++	}
++}
+diff --git a/pkg/preroute/routes/news.go b/pkg/preroute/routes/news.go
+new file mode 100644
+index 00000000..96fb214a
+--- /dev/null
++++ b/pkg/preroute/routes/news.go
+@@ -0,0 +1,39 @@
++package routes
++
++import (
++	"context"
++
++	"github.com/sipeed/picoclaw/pkg/preroute"
++)
++
++type NewsExecutor interface {
++	Execute(ctx context.Context, rc preroute.Context) (text string, handled bool, err error)
++}
++
++type newsRoute struct {
++	executor NewsExecutor
++}
++
++func NewNews(executor NewsExecutor) preroute.Route {
++	return newsRoute{executor: executor}
++}
++
++func (r newsRoute) ID() string { return "news" }
++
++func (r newsRoute) Handle(ctx context.Context, rc preroute.Context) (preroute.Result, error) {
++	if r.executor == nil {
++		return preroute.Result{}, nil
++	}
++	text, handled, err := r.executor.Execute(ctx, rc)
++	if err != nil {
++		return preroute.Result{}, err
++	}
++	if !handled {
++		return preroute.Result{}, nil
++	}
++	return preroute.Result{
++		Handled: true,
++		Text:    text,
++		RouteID: r.ID(),
++	}, nil
++}
+diff --git a/pkg/preroute/routes/image.go b/pkg/preroute/routes/image.go
+new file mode 100644
+index 00000000..041b51ac
+--- /dev/null
++++ b/pkg/preroute/routes/image.go
+@@ -0,0 +1,35 @@
++package routes
++
++import (
++	"context"
++
++	"github.com/sipeed/picoclaw/pkg/preroute"
++)
++
++type ImageExecutor interface {
++	Execute(ctx context.Context, rc preroute.Context) (preroute.Result, error)
++}
++
++type imageRoute struct {
++	executor ImageExecutor
++}
++
++func NewImage(executor ImageExecutor) preroute.Route {
++	return imageRoute{executor: executor}
++}
++
++func (r imageRoute) ID() string { return "image" }
++
++func (r imageRoute) Handle(ctx context.Context, rc preroute.Context) (preroute.Result, error) {
++	if r.executor == nil {
++		return preroute.Result{}, nil
++	}
++	result, err := r.executor.Execute(ctx, rc)
++	if err != nil {
++		return preroute.Result{}, err
++	}
++	if result.Handled && result.RouteID == "" {
++		result.RouteID = r.ID()
++	}
++	return result, nil
++}
+diff --git a/pkg/agent/preroute_runtime.go b/pkg/agent/preroute_runtime.go
+new file mode 100644
+index 00000000..6c989efb
+--- /dev/null
++++ b/pkg/agent/preroute_runtime.go
+@@ -0,0 +1,182 @@
++package agent
++
++import (
++	"context"
++	"strings"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/constants"
++	"github.com/sipeed/picoclaw/pkg/logger"
++	"github.com/sipeed/picoclaw/pkg/preroute"
++	"github.com/sipeed/picoclaw/pkg/preroute/executors"
++	preroutes "github.com/sipeed/picoclaw/pkg/preroute/routes"
++	"github.com/sipeed/picoclaw/pkg/tools"
++)
++
++func (al *AgentLoop) handlePreRoute(
++	ctx context.Context,
++	agent *AgentInstance,
++	msg bus.InboundMessage,
++) (string, bool, error) {
++	router := al.buildPreRouter(agent, msg.Channel)
++	if router == nil {
++		logger.WarnCF("agent", "Forced pre-route skipped: no router", map[string]any{
++			"agent_id": agent.ID,
++			"channel":  msg.Channel,
++			"chat_id":  msg.ChatID,
++			"query":    strings.TrimSpace(msg.Content),
++		})
++		return "", false, nil
++	}
++
++	result, err := router.Route(ctx, preroute.Context{
++		Channel:    msg.Channel,
++		ChatID:     msg.ChatID,
++		AgentID:    agent.ID,
++		Workspace:  agent.Workspace,
++		Query:      msg.Content,
++		QuotedText: inboundMetadata(msg, "quote_text"),
++		MediaRefs:  append([]string(nil), msg.Media...),
++		Metadata:   cloneStringMap(msg.Metadata),
++	})
++	if err != nil {
++		logger.WarnCF("agent", "Forced pre-route failed", map[string]any{
++			"agent_id": agent.ID,
++			"channel":  msg.Channel,
++			"chat_id":  msg.ChatID,
++			"error":    err.Error(),
++		})
++		return "", false, err
++	}
++	if !result.Handled {
++		logger.WarnCF("agent", "Forced pre-route miss", map[string]any{
++			"agent_id": agent.ID,
++			"channel":  msg.Channel,
++			"chat_id":  msg.ChatID,
++			"query":    strings.TrimSpace(msg.Content),
++		})
++		return "", false, nil
++	}
++
++	logger.WarnCF("agent", "Forced pre-route handled message", map[string]any{
++		"agent_id": agent.ID,
++		"route_id": result.RouteID,
++		"channel":  msg.Channel,
++		"chat_id":  msg.ChatID,
++	})
++	if len(result.MediaRefs) > 0 {
++		parts := make([]bus.MediaPart, 0, len(result.MediaRefs))
++		for _, ref := range result.MediaRefs {
++			part := bus.MediaPart{Ref: ref}
++			if al.mediaStore != nil {
++				if _, meta, err := al.mediaStore.ResolveWithMeta(ref); err == nil {
++					part.Filename = meta.Filename
++					part.ContentType = meta.ContentType
++					part.Type = inferMediaType(meta.Filename, meta.ContentType)
++				}
++			}
++			parts = append(parts, part)
++		}
++		outboundMedia := bus.OutboundMediaMessage{
++			Channel: msg.Channel,
++			ChatID:  msg.ChatID,
++			Parts:   parts,
++		}
++		if al.channelManager != nil && msg.Channel != "" && !constants.IsInternalChannel(msg.Channel) {
++			if err := al.channelManager.SendMedia(ctx, outboundMedia); err != nil {
++				return "", true, err
++			}
++		} else if al.bus != nil {
++			al.bus.PublishOutboundMedia(ctx, outboundMedia)
++		}
++	}
++	return result.Text, true, nil
++}
++
++func (al *AgentLoop) buildPreRouter(agent *AgentInstance, channel string) *preroute.Router {
++	if al == nil || al.cfg == nil || agent == nil {
++		return nil
++	}
++	cfg := al.cfg.Routes.Forced
++	if !cfg.Enabled {
++		logger.WarnCF("agent", "Forced pre-route disabled", map[string]any{
++			"agent_id": agent.ID,
++			"channel":  channel,
++		})
++		return nil
++	}
++	if len(cfg.Channels) > 0 && !containsStringFold(cfg.Channels, channel) {
++		logger.WarnCF("agent", "Forced pre-route channel filtered", map[string]any{
++			"agent_id": agent.ID,
++			"channel":  channel,
++			"allowed":  strings.Join(cfg.Channels, ","),
++		})
++		return nil
++	}
++
++	routes := make([]preroute.Route, 0, len(cfg.Order))
++	for _, id := range cfg.Order {
++		switch strings.ToLower(strings.TrimSpace(id)) {
++		case "help":
++			if cfg.Features.Help {
++				routes = append(routes, preroutes.NewHelp(""))
++			}
++		case "news":
++			if cfg.Features.News {
++				routes = append(routes, preroutes.NewNews(executors.TencentNewsCLIExecutor{
++					RelativePath: cfg.News.CLIRelativePath,
++				}))
++			}
++		case "image":
++			if !cfg.Features.Image {
++				continue
++			}
++			tool, ok := agent.Tools.Get("modelscope-image")
++			if !ok {
++				continue
++			}
++			execTool, ok := tool.(interface {
++				Execute(ctx context.Context, args map[string]any) *tools.ToolResult
++			})
++			if !ok {
++				continue
++			}
++			routes = append(routes, preroutes.NewImage(executors.ModelScopeImageExecutor{Tool: execTool}))
++		}
++	}
++	if len(routes) == 0 {
++		logger.WarnCF("agent", "Forced pre-route built zero routes", map[string]any{
++			"agent_id": agent.ID,
++			"channel":  channel,
++			"order":    strings.Join(cfg.Order, ","),
++		})
++		return nil
++	}
++	logger.WarnCF("agent", "Forced pre-route router ready", map[string]any{
++		"agent_id": agent.ID,
++		"channel":  channel,
++		"count":    len(routes),
++		"order":    strings.Join(cfg.Order, ","),
++	})
++	return preroute.NewRouter(routes)
++}
++
++func containsStringFold(items []string, target string) bool {
++	for _, item := range items {
++		if strings.EqualFold(strings.TrimSpace(item), strings.TrimSpace(target)) {
++			return true
++		}
++	}
++	return false
++}
++
++func cloneStringMap(src map[string]string) map[string]string {
++	if len(src) == 0 {
++		return nil
++	}
++	dst := make(map[string]string, len(src))
++	for k, v := range src {
++		dst[k] = v
++	}
++	return dst
++}
