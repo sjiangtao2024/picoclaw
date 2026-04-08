@@ -39,6 +39,7 @@ type Config struct {
 	Heartbeat HeartbeatConfig `json:"heartbeat"           yaml:"-"`
 	Devices   DevicesConfig   `json:"devices"             yaml:"-"`
 	Voice     VoiceConfig     `json:"voice"               yaml:"-"`
+	Routes    RoutesConfig    `json:"routes,omitempty"   yaml:"-"`
 	// BuildInfo contains build-time version information
 	BuildInfo BuildInfo `json:"build_info,omitempty" yaml:"-"`
 
@@ -186,6 +187,7 @@ type AgentConfig struct {
 	Model     *AgentModelConfig `json:"model,omitempty"`
 	Skills    []string          `json:"skills,omitempty"`
 	Subagents *SubagentsConfig  `json:"subagents,omitempty"`
+	Routes    RoutesConfig     `json:"routes,omitempty" yaml:"-"`
 }
 
 type SubagentsConfig struct {
@@ -1397,4 +1399,33 @@ func (t *ToolsConfig) IsToolEnabled(name string) bool {
 	default:
 		return true
 	}
+}
+
+// RoutesConfig holds the routing configuration.
+type RoutesConfig struct {
+	Forced ForcedRoutesConfig `json:"forced,omitempty"`
+}
+
+// ForcedRoutesConfig controls the forced pre-route system.
+type ForcedRoutesConfig struct {
+	Enabled  bool                `json:"enabled,omitempty"`
+	Order    []string            `json:"order,omitempty"`
+	Channels []string            `json:"channels,omitempty"`
+	Features ForcedRouteFeatures `json:"features,omitempty"`
+	News     ForcedNewsConfig    `json:"news,omitempty"`
+}
+
+// ForcedRouteFeatures toggles individual forced route handlers.
+type ForcedRouteFeatures struct {
+	Help  bool `json:"help,omitempty"`
+	News  bool `json:"news,omitempty"`
+	Image bool `json:"image,omitempty"`
+	Stock bool `json:"stock,omitempty"`
+	Map   bool `json:"map,omitempty"`
+	Voice bool `json:"voice,omitempty"`
+}
+
+// ForcedNewsConfig holds tencent-news CLI settings.
+type ForcedNewsConfig struct {
+	CLIRelativePath string `json:"cli_relative_path,omitempty"`
 }
